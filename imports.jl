@@ -10,5 +10,8 @@ using LaTeXStrings          # For LaTeX formatting in plots
 using LinearAlgebra         # For matrix operations (standard library)
 using Statistics            # For statistical analysis (standard library)
 using Markdown              # For markdown documentation blocks (standard library)
+using Optimization          # For advanced optimization algorithms
+using OptimizationOptimJL  # For using Optim.jl algorithms with Optimization.jl
+using LightXML              # For parsing Tracker .trk files (XML format)
 
 println("All packages loaded successfully!")

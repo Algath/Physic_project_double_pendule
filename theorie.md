@@ -91,3 +91,5 @@ Projet/
 5. **Optimization**: Find masses (0-1s) then damping coefficients (1-2s)
 6. **Prediction**: Extend simulation 2s beyond video data
 7. **Validation**: Compare simulated vs observed trajectories
+
+Les équations finaux sont les équations de mouvement, theta 1, theta 2, theta 1' t, theta 2' t pour connaître tous ce qui se passe dans le système. Avec la méthode de Lagrange, il est possible d'avoir une formule simplifier

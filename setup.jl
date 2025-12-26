@@ -11,7 +11,10 @@ packages = [
     "DataFrames",
     "Optim",
     "LaTeXStrings",
-    "Markdown"
+    "Markdown",
+    "Optimization",
+    "OptimizationOptimJL",
+    "LightXML"
 ]
 
 println("Installing required packages...")

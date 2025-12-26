@@ -1,11 +1,152 @@
 include("imports.jl")
 
+# =============================================================================
+# Chargement des données Tracker (fichier .trk)
+# =============================================================================
+
+function load_tracker_positions(filepath::String)
+    """Charge les positions des masses depuis le fichier .trk"""
+    xdoc = parse_file(filepath)
+    xroot = root(xdoc)
+    
+    # Paramètres de calibration
+    origin_x = 0.0
+    origin_y = 0.0
+    scale = 1.0
+    
+    # Parcourir pour trouver ImageCoordSystem
+    for prop in child_elements(xroot)
+        if attribute(prop, "name") == "coords"
+            for obj in child_elements(prop)
+                for subprop in child_elements(obj)
+                    if attribute(subprop, "name") == "framedata"
+                        for arr in child_elements(subprop)
+                            for framedata in child_elements(arr)
+                                for fprop in child_elements(framedata)
+                                    name = attribute(fprop, "name")
+                                    if name == "xorigin"
+                                        origin_x = parse(Float64, content(fprop))
+                                    elseif name == "yorigin"
+                                        origin_y = parse(Float64, content(fprop))
+                                    elseif name == "xscale"
+                                        scale = parse(Float64, content(fprop))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    # Extraire les données des PointMass
+    mass_positions = Dict{String, Vector{Tuple{Float64, Float64}}}()
+    
+    for prop in child_elements(xroot)
+        if attribute(prop, "name") == "tracks"
+            for item in child_elements(prop)
+                for obj in child_elements(item)
+                    classname = attribute(obj, "class")
+                    if classname !== nothing && contains(classname, "PointMass")
+                        mass_name = ""
+                        positions = Tuple{Float64, Float64}[]
+                        
+                        for mprop in child_elements(obj)
+                            if attribute(mprop, "name") == "name"
+                                mass_name = content(mprop)
+                            elseif attribute(mprop, "name") == "framedata"
+                                for frame in child_elements(mprop)
+                                    x, y = 0.0, 0.0
+                                    for fobj in child_elements(frame)
+                                        for fprop in child_elements(fobj)
+                                            if attribute(fprop, "name") == "x"
+                                                x = parse(Float64, content(fprop))
+                                            elseif attribute(fprop, "name") == "y"
+                                                y = parse(Float64, content(fprop))
+                                            end
+                                        end
+                                    end
+                                    # Convertir en coordonnées réelles (mètres)
+                                    x_real = (x - origin_x) / scale
+                                    y_real = (y - origin_y) / scale
+                                    push!(positions, (x_real, y_real))
+                                end
+                            end
+                        end
+                        
+                        if !isempty(mass_name) && !isempty(positions)
+                            mass_positions[mass_name] = positions
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    free(xdoc)
+    return mass_positions, origin_x, origin_y, scale
+end
+
+function calculate_angles_from_positions(mass_A_positions, mass_B_positions)
+    """
+    Calcule les angles θ1 et θ2 à partir des positions des masses.
+    
+    Convention physique du pendule double:
+    - θ = 0 quand le pendule pointe vers le bas
+    - θ positif = rotation dans le sens horaire (vers la droite)
+    
+    Dans Tracker après conversion (y_real = (y_pixel - origin_y) / scale):
+    - x positif = vers la droite  
+    - y positif = vers le bas (masse sous le pivot)
+    
+    Donc: θ = atan(x, y) donne l'angle depuis la verticale vers le bas
+    """
+    n = min(length(mass_A_positions), length(mass_B_positions))
+    θ1 = zeros(n)
+    θ2 = zeros(n)
+    
+    for i in 1:n
+        x1, y1 = mass_A_positions[i]
+        x2, y2 = mass_B_positions[i]
+        
+        # θ1: angle du premier pendule depuis la verticale vers le bas
+        # atan(x, y) où y positif = vers le bas = θ=0
+        θ1[i] = atan(x1, y1)
+        
+        # θ2: angle du deuxième pendule par rapport à la verticale
+        dx = x2 - x1
+        dy = y2 - y1
+        θ2[i] = atan(dx, dy)
+    end
+    
+    return θ1, θ2
+end
+
+# Charger les données réelles
+println("Chargement des données Tracker...")
+trk_path = joinpath(@__DIR__, "assets", "First_Video_2s.trk")
+mass_positions, origin_x, origin_y, scale = load_tracker_positions(trk_path)
+
+println("  Origine: ($origin_x, $origin_y) pixels")
+println("  Échelle: $scale pixels/m")
+println("  Masses trouvées: $(keys(mass_positions))")
+
+# Paramètres temporels (100 fps, 2 secondes = 200 frames)
+dt = 0.01  # 10ms entre chaque frame
+n_frames = 200
+t_data = collect(0:dt:(n_frames-1)*dt)
+
+# =============================================================================
+# Fonctions utilitaires
+# =============================================================================
+
 function degrees_to_radians(degrees)
     return degrees * (π / 180)
 end
 
 function Lagrangien(θ1_0, θ2_0, m1, m2, g, r1, r2, L1, L2)
-    lagrange = m1*(L1*θ1_0)^2/2 + m2*((L1*θ1_0)^2 + (L2*θ2_0)^2 + 2*L1*L2*θ1_0*θ2_0*cos(θ1_0 - θ2_0)) + m1*g*L1*cos(θ1_0) + m2*g*(L1*cos(θ1_0) + L2*cos(θ2_0))
+    lagrange = m1*(L1*θ1_0)^2 /2 + m2*((L1*θ1_0)^2 + (L2*θ2_0)^2 + 2*L1*L2*θ1_0*θ2_0*cos(θ1_0 - θ2_0)) + m1*g*L1*cos(θ1_0) + m2*g*(L1*cos(θ1_0) + L2*cos(θ2_0))/2
     return lagrange
 end
 
@@ -15,14 +156,225 @@ function position(θ1_0, L1, θ2_0, L2)
     return r1, r2
 end
 
-# Parameters
-L1 = 91.74  # Length of first pendulum (mm)
-L2 = 69.33  # Length of second pendulum (mm)
-θ1_0 = degrees_to_radians(181.5)  # Initial angle of first pendulum (rad)
-θ2_0 = degrees_to_radians(183.1)  # Initial angle of second pendulum (rad)
-g = 9.81    # Acceleration due to gravity (m/s^2)
-m1 = 0      # Mass of first pendulum (to be determined)
-m2 = 0      # Mass of second pendulum (to be determined)
+function equations_double_pendulum!(du, u, p, t)
+    θ1, ω1, θ2, ω2 = u
+    m1, m2, L1, L2, g = p
+    
+    δ = θ2 - θ1
+    den1 = (m1 + m2) * L1 - m2 * L1 * cos(δ)^2
+    den2 = (L2 / L1) * den1
+    
+    # Accélérations angulaires
+    du[1] = ω1
+    du[2] = (m2 * L1 * ω1^2 * sin(δ) * cos(δ) +
+             m2 * g * sin(θ2) * cos(δ) +
+             m2 * L2 * ω2^2 * sin(δ) -
+             (m1 + m2) * g * sin(θ1)) / den1
+    
+    du[3] = ω2
+    du[4] = (-m2 * L2 * ω2^2 * sin(δ) * cos(δ) +
+             (m1 + m2) * g * sin(θ1) * cos(δ) -
+             (m1 + m2) * L1 * ω1^2 * sin(δ) -
+             (m1 + m2) * g * sin(θ2)) / den2
+end
 
-# Initial positions
-r1, r2 = position(θ1_0, L1, θ2_0, L2)
+function simulate_pendulum(masses, L1, L2, g, θ1_0, θ2_0, tspan, saveat)
+    m1, m2 = masses
+    u0 = [θ1_0, 0.0, θ2_0, 0.0]  # conditions initiales (angles, vitesses angulaires)
+    p = [m1, m2, L1, L2, g]  # L1 et L2 déjà en mètres
+    
+    prob = ODEProblem(equations_double_pendulum!, u0, tspan, p)
+    sol = solve(prob, Tsit5(), saveat=saveat)
+    
+    return sol
+end
+
+function cost_function(masses, L1, L2, g, θ1_0, θ2_0, t_data, θ1_data, θ2_data)
+    sol = simulate_pendulum(masses, L1, L2, g, θ1_0, θ2_0, (t_data[1], t_data[end]), t_data)
+    
+    # Erreur quadratique (somme des carrés des résidus)
+    error = 0.0
+    for i in 1:length(t_data)
+        error += (sol[1, i] - θ1_data[i])^2 + (sol[3, i] - θ2_data[i])^2
+    end
+    
+    return error
+end
+
+# =============================================================================
+# Fonctions de métriques pour comparer simulation et mesures
+# =============================================================================
+
+function calculate_R2(y_measured, y_simulated)
+    """Calcule le coefficient de détermination R²"""
+    ss_res = sum((y_measured .- y_simulated).^2)
+    ss_tot = sum((y_measured .- mean(y_measured)).^2)
+    return 1 - ss_res / ss_tot
+end
+
+function calculate_RMSE(y_measured, y_simulated)
+    """Calcule l'erreur quadratique moyenne (RMSE)"""
+    return sqrt(mean((y_measured .- y_simulated).^2))
+end
+
+function calculate_metrics(t_data, θ1_data, θ2_data, sol)
+    """Calcule toutes les métriques de comparaison"""
+    θ1_sim = sol[1, :]
+    θ2_sim = sol[3, :]
+    
+    R2_θ1 = calculate_R2(θ1_data, θ1_sim)
+    R2_θ2 = calculate_R2(θ2_data, θ2_sim)
+    RMSE_θ1 = calculate_RMSE(θ1_data, θ1_sim)
+    RMSE_θ2 = calculate_RMSE(θ2_data, θ2_sim)
+    
+    return (R2_θ1=R2_θ1, R2_θ2=R2_θ2, RMSE_θ1=RMSE_θ1, RMSE_θ2=RMSE_θ2)
+end
+
+# =============================================================================
+# Paramètres physiques
+# =============================================================================
+
+# ATTENTION: Les longueurs sont en mm, on les convertit en m
+L1 = 91.74 / 1000  # Longueur du premier pendule (m) - était 91.74mm
+L2 = 69.33 / 1000  # Longueur du second pendule (m) - était 69.33mm
+
+g = 9.81    # Accélération due à la gravité (m/s²)
+
+# =============================================================================
+# Charger les vraies données depuis Tracker
+# =============================================================================
+
+# Extraire les positions et calculer les angles
+if haskey(mass_positions, "mass A") && haskey(mass_positions, "mass B")
+    mass_A = mass_positions["mass A"]
+    mass_B = mass_positions["mass B"]
+    
+    # Ajuster le nombre de frames si nécessaire
+    n_actual = min(length(mass_A), length(mass_B), n_frames)
+    t_data = t_data[1:n_actual]
+    
+    # Calculer les angles depuis les positions
+    θ1_data, θ2_data = calculate_angles_from_positions(mass_A[1:n_actual], mass_B[1:n_actual])
+    
+    # Angles initiaux
+    θ1_0 = θ1_data[1]
+    θ2_0 = θ2_data[1]
+    
+    println("\nAngles initiaux:")
+    println("  θ1_0 = $(rad2deg(θ1_0))°")
+    println("  θ2_0 = $(rad2deg(θ2_0))°")
+    println("  Nombre de frames: $n_actual")
+else
+    error("Masses 'mass A' et 'mass B' non trouvées dans le fichier Tracker!")
+end
+
+# Utiliser Optim.jl directement pour NelderMead (plus simple et sans problème de gradients)
+function objective(masses)
+    return cost_function(masses, L1, L2, g, θ1_0, θ2_0, t_data, θ1_data, θ2_data)
+end
+
+m_init = [0.05, 0.03]  # kg - valeurs initiales raisonnables
+
+println("\nOptimisation des masses...")
+# Utiliser optimize de Optim.jl directement
+result = optimize(objective, [0.001, 0.001], [1.0, 1.0], m_init, Fminbox(NelderMead()))
+
+m_opt = Optim.minimizer(result)
+
+println("\nMasses optimales:")
+println("  m1 = $(m_opt[1]*1000) g")
+println("  m2 = $(m_opt[2]*1000) g")
+println("  Ratio m2/m1 = $(m_opt[2]/m_opt[1])")
+println("  Erreur finale = $(Optim.minimum(result))")
+
+u0 = [θ1_0, 0.0, θ2_0, 0.0]
+p_opt = [m_opt[1], m_opt[2], L1, L2, g]  # L1 et L2 déjà en mètres
+prob_opt = ODEProblem(equations_double_pendulum!, u0, (t_data[1], t_data[end]), p_opt)
+sol_opt = solve(prob_opt, Tsit5(), saveat=t_data)
+
+# Calculer et afficher les métriques
+metrics = calculate_metrics(t_data, θ1_data, θ2_data, sol_opt)
+println("\nMétriques de comparaison:")
+println("  R² θ1 = $(metrics.R2_θ1)")
+println("  R² θ2 = $(metrics.R2_θ2)")
+println("  RMSE θ1 = $(metrics.RMSE_θ1) rad")
+println("  RMSE θ2 = $(metrics.RMSE_θ2) rad")
+
+# Créer le graphique
+p = plot(t_data, θ1_data, label="θ1 mesuré", lw=2, title="Comparaison simulation vs données")
+plot!(p, t_data, sol_opt[1,:], label="θ1 simulé", ls=:dash, lw=2)
+plot!(p, t_data, θ2_data, label="θ2 mesuré", lw=2)
+plot!(p, t_data, sol_opt[3,:], label="θ2 simulé", ls=:dash, lw=2)
+xlabel!(p, "Temps (s)")
+ylabel!(p, "Angle (rad)")
+
+# Sauvegarder le graphique
+savefig(p, "assets/pendule_comparison.png")
+println("\nGraphique sauvegardé: assets/pendule_comparison.png")
+
+# =============================================================================
+# Animation du pendule double
+# =============================================================================
+
+function animate_pendulum(t_data, θ1_data, θ2_data, sol_opt, L1, L2; fps=30, skip=2)
+    """Crée une animation GIF du pendule double (mesuré vs simulé)"""
+    
+    # Extraire les angles simulés
+    θ1_sim = sol_opt[1, :]
+    θ2_sim = sol_opt[3, :]
+    
+    # Calculer les positions (x, y) pour chaque frame
+    # Convention pour l'affichage: y négatif vers le bas, x positif vers la droite
+    # Mais on inverse x pour correspondre à la vidéo (pendule tombe vers la gauche)
+    function pendulum_positions(θ1, θ2, L1, L2)
+        # Inverser le signe de sin pour que θ positif = vers la gauche
+        x1 = -L1 * sin(θ1)
+        y1 = -L1 * cos(θ1)
+        x2 = x1 - L2 * sin(θ2)
+        y2 = y1 - L2 * cos(θ2)
+        return x1, y1, x2, y2
+    end
+    
+    # Limites du graphique - augmenter pour voir tout le pendule
+    L_total = (L1 + L2) * 1.3
+    
+    println("Création de l'animation...")
+    
+    anim = @animate for i in 1:skip:length(t_data)
+        # Positions mesurées
+        x1_m, y1_m, x2_m, y2_m = pendulum_positions(θ1_data[i], θ2_data[i], L1, L2)
+        
+        # Positions simulées
+        x1_s, y1_s, x2_s, y2_s = pendulum_positions(θ1_sim[i], θ2_sim[i], L1, L2)
+        
+        # Créer le plot avec des limites symétriques pour tout voir
+        plt = plot(
+            xlim=(-L_total, L_total),
+            ylim=(-L_total, L_total),
+            aspect_ratio=:equal,
+            legend=:topright,
+            title="Pendule Double - t = $(round(t_data[i], digits=2)) s",
+            xlabel="x (m)",
+            ylabel="y (m)",
+            size=(600, 600)
+        )
+        
+        # Dessiner le pendule mesuré (bleu)
+        plot!(plt, [0, x1_m, x2_m], [0, y1_m, y2_m], 
+              lw=3, color=:blue, label="Mesuré", marker=:circle, markersize=8)
+        
+        # Dessiner le pendule simulé (rouge, pointillé)
+        plot!(plt, [0, x1_s, x2_s], [0, y1_s, y2_s], 
+              lw=3, color=:red, ls=:dash, label="Simulé", marker=:circle, markersize=8)
+        
+        # Point de pivot
+        scatter!(plt, [0], [0], color=:black, markersize=10, label="Pivot")
+    end
+    
+    # Sauvegarder le GIF
+    gif(anim, "assets/pendule_animation.gif", fps=fps)
+    println("Animation sauvegardée: assets/pendule_animation.gif")
+end
+
+# Créer l'animation (skip=4 pour accélérer la génération)
+animate_pendulum(t_data, θ1_data, θ2_data, sol_opt, L1, L2, fps=20, skip=4)
