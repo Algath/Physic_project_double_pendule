@@ -91,9 +91,12 @@ end
 function unwrap_angles(angles)
     """
     Corrige les sauts de 2π dans une série d'angles pour obtenir une trajectoire continue.
-    Tracker donne des angles entre -180° et 180°, cette fonction les "déroule".
+    Convertit d'abord en base 0-2π (360°), puis déroule les discontinuités.
     """
-    unwrapped = copy(angles)
+    # D'abord convertir en base 0-2π
+    unwrapped = mod.(angles, 2π)
+    
+    # Puis dérouler les sauts
     for i in 2:length(unwrapped)
         diff = unwrapped[i] - unwrapped[i-1]
         if diff > π
@@ -109,15 +112,31 @@ function calculate_angles_from_positions(mass_A_positions, mass_B_positions)
     """
     Calcule les angles θ1 et θ2 à partir des positions des masses.
     
-    Convention physique du pendule double:
-    - θ = 0 quand le pendule pointe vers le bas
-    - θ positif = rotation dans le sens horaire (vers la droite)
-    
-    Dans Tracker après conversion (y_real = (y_pixel - origin_y) / scale):
+    Convention Tracker (confirmée):
     - x positif = vers la droite  
-    - y positif = vers le bas (masse sous le pivot)
+    - y positif = vers le HAUT
+    - θ = 0 quand le pendule est en bas (y négatif)
     
-    Donc: θ = atan(x, y) donne l'angle depuis la verticale vers le bas
+    Convention physique standard du pendule double:
+    - θ = 0 quand le pendule pointe vers le bas
+    - x = L*sin(θ), y = -L*cos(θ)
+    
+    Dans Tracker: pendule en bas → y négatif, pendule en haut → y positif
+    Pour atan2(x, y): on obtient θ=0 quand x=0 et y>0
+    
+    Donc pour avoir θ=0 quand le pendule est en bas (y<0 dans Tracker):
+    θ = atan(x, y) donne directement le bon angle car:
+    - Pendule en bas: y < 0 → atan(0, y<0) = π (ou -π), NON!
+    
+    En fait, si y positif = haut et on veut θ=0 en bas:
+    θ = atan(x, y) avec y négatif en bas → atan(0, -L) = π
+    
+    Mais Tracker dit θ=0 en bas... donc Tracker utilise atan(x, -y)!
+    Non attendez - revoyons: si Tracker montre θ=0 en bas, c'est SA convention.
+    
+    Pour notre modèle physique où y négatif = bas:
+    y_physique = y_tracker (même convention!)
+    θ = atan(x, y) directement
     
     Note: Les angles sont "unwrapped" pour éviter les sauts à ±180°
     """
@@ -129,8 +148,8 @@ function calculate_angles_from_positions(mass_A_positions, mass_B_positions)
         x1, y1 = mass_A_positions[i]
         x2, y2 = mass_B_positions[i]
         
-        # θ1: angle du premier pendule depuis la verticale vers le bas
-        # atan(x, y) où y positif = vers le bas = θ=0
+        # Convention Tracker: y positif = haut, θ=0 en haut
+        # atan(x, y) donne l'angle depuis l'axe +y (antihoraire = positif)
         θ1_raw[i] = atan(x1, y1)
         
         # θ2: angle du deuxième pendule par rapport à la verticale
@@ -184,21 +203,23 @@ function equations_double_pendulum!(du, u, p, t)
     m1, m2, L1, L2, g = p
     
     δ = θ2 - θ1
-    den1 = (m1 + m2) * L1 - m2 * L1 * cos(δ)^2
-    den2 = (L2 / L1) * den1
+    cos_δ = cos(δ)
+    sin_δ = sin(δ)
     
-    # Accélérations angulaires
+    # Dénominateur commun (ne s'annule jamais car m1 + m2*sin²(δ) > 0)
+    den = m1 + m2 * sin_δ^2
+    
+    # Accélérations angulaires (équations de Lagrange correctes)
     du[1] = ω1
-    du[2] = (m2 * L1 * ω1^2 * sin(δ) * cos(δ) +
-             m2 * g * sin(θ2) * cos(δ) +
-             m2 * L2 * ω2^2 * sin(δ) -
-             (m1 + m2) * g * sin(θ1)) / den1
+    du[2] = (m2 * sin_δ * (L1 * ω1^2 * cos_δ + L2 * ω2^2) +
+             m2 * g * sin(θ2) * cos_δ -
+             (m1 + m2) * g * sin(θ1)) / (L1 * den)
     
     du[3] = ω2
-    du[4] = (-m2 * L2 * ω2^2 * sin(δ) * cos(δ) +
-             (m1 + m2) * g * sin(θ1) * cos(δ) -
-             (m1 + m2) * L1 * ω1^2 * sin(δ) -
-             (m1 + m2) * g * sin(θ2)) / den2
+    du[4] = (-m2 * L2 * ω2^2 * sin_δ * cos_δ -
+             (m1 + m2) * L1 * ω1^2 * sin_δ +
+             (m1 + m2) * g * sin(θ1) * cos_δ -
+             (m1 + m2) * g * sin(θ2)) / (L2 * den)
 end
 
 function simulate_pendulum(masses, L1, L2, g, θ1_0, θ2_0, tspan, saveat)
@@ -250,7 +271,7 @@ if haskey(mass_positions, "mass A") && haskey(mass_positions, "mass B")
     # Calculer les angles depuis les positions
     θ1_data, θ2_data = calculate_angles_from_positions(mass_A[1:n_actual], mass_B[1:n_actual])
     
-    # Angles initiaux
+    # Angles initiaux (directement depuis les données)
     θ1_0 = θ1_data[1]
     θ2_0 = θ2_data[1]
     
@@ -263,15 +284,21 @@ else
 end
 
 # Utiliser Optim.jl directement pour NelderMead (plus simple et sans problème de gradients)
-# Optimiser sur les 0.02s premières secondes seulement (plus stable)
-t_optim_end = 0.02
+# Optimiser sur une fenêtre plus large pour mieux capturer la dynamique
+t_optim_end = 1.0  # Augmenté de 0.02s à 1.0s pour mieux coller aux données
 idx_optim = findlast(t -> t <= t_optim_end, t_data)
 t_optim = t_data[1:idx_optim]
 θ1_optim = θ1_data[1:idx_optim]
 θ2_optim = θ2_data[1:idx_optim]
 
 function objective(masses)
-    return cost_function(masses, L1, L2, g, θ1_0, θ2_0, t_optim, θ1_optim, θ2_optim)
+    # Pondération beaucoup plus forte sur θ2 pour réduire son erreur
+    sol = simulate_pendulum(masses, L1, L2, g, θ1_0, θ2_0, (t_optim[1], t_optim[end]), t_optim)
+    error = 0.0
+    for i in 1:length(t_optim)
+        error += (sol[1, i] - θ1_optim[i])^2 + 5.0 * (sol[3, i] - θ2_optim[i])^2
+    end
+    return error
 end
 
 m_init = [0.05, 0.03]  # kg - valeurs initiales raisonnables

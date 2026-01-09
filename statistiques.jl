@@ -57,9 +57,9 @@ function lyapunov_exponent(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; δ0=1e-8, dt=
     tspan = (0.0, T_max)
     t_eval = collect(0:dt:T_max)
     
-    # Simuler les deux trajectoires (modèle idéal sans frottements)
-    prob_ref = ODEProblem(equations_double_pendulum_ideal!, u0_ref, tspan, p)
-    prob_pert = ODEProblem(equations_double_pendulum_ideal!, u0_pert, tspan, p)
+    # Simuler les deux trajectoires
+    prob_ref = ODEProblem(equations_double_pendulum!, u0_ref, tspan, p)
+    prob_pert = ODEProblem(equations_double_pendulum!, u0_pert, tspan, p)
     
     sol_ref = solve(prob_ref, Tsit5(), saveat=t_eval)
     sol_pert = solve(prob_pert, Tsit5(), saveat=t_eval)
@@ -129,8 +129,8 @@ function lyapunov_spectrum(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; n_perturbatio
         tspan = (0.0, T_max)
         t_eval = collect(0:dt:T_max)
         
-        prob_ref = ODEProblem(equations_double_pendulum_ideal!, u0_ref, tspan, p)
-        prob_pert = ODEProblem(equations_double_pendulum_ideal!, u0_pert, tspan, p)
+        prob_ref = ODEProblem(equations_double_pendulum!, u0_ref, tspan, p)
+        prob_pert = ODEProblem(equations_double_pendulum!, u0_pert, tspan, p)
         
         sol_ref = solve(prob_ref, Tsit5(), saveat=t_eval)
         sol_pert = solve(prob_pert, Tsit5(), saveat=t_eval)
@@ -277,9 +277,11 @@ function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; 
     """Crée une animation GIF du pendule double (mesuré vs simulé)"""
     
     function pendulum_positions(θ1, θ2, L1, L2)
-        x1 = -L1 * sin(θ1)
+        # Convention: θ=0 en bas, sens antihoraire positif
+        # x = L*sin(θ), y = -L*cos(θ)
+        x1 = L1 * sin(θ1)
         y1 = -L1 * cos(θ1)
-        x2 = x1 - L2 * sin(θ2)
+        x2 = x1 + L2 * sin(θ2)
         y2 = y1 - L2 * cos(θ2)
         return x1, y1, x2, y2
     end
@@ -352,6 +354,69 @@ function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; 
     println("Tracé final sauvegardé: assets/pendule_trace.png")
 end
 
+function save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data; frame=1, filename="assets/pendule_frame1.png")
+    """Sauvegarde une frame spécifique du pendule double"""
+    
+    function pendulum_positions(θ1, θ2, L1, L2)
+        # Convention: θ=0 en bas, sens antihoraire positif
+        # x = L*sin(θ), y = -L*cos(θ)
+        x1 = L1 * sin(θ1)
+        y1 = -L1 * cos(θ1)
+        x2 = x1 + L2 * sin(θ2)
+        y2 = y1 - L2 * cos(θ2)
+        return x1, y1, x2, y2
+    end
+    
+    L_total = (L1 + L2) * 1.3
+    
+    x1_m, y1_m, x2_m, y2_m = pendulum_positions(θ1_data[frame], θ2_data[frame], L1, L2)
+    x1_s, y1_s, x2_s, y2_s = pendulum_positions(θ1_sim[frame], θ2_sim[frame], L1, L2)
+    
+    plt = plot(
+        xlim=(-L_total, L_total),
+        ylim=(-L_total, L_total),
+        aspect_ratio=:equal,
+        legend=:topright,
+        title="Pendule Double - Frame $frame (t = $(round(t_data[frame], digits=3)) s)",
+        xlabel="x (m)",
+        ylabel="y (m)",
+        size=(600, 600)
+    )
+    
+    # Pendules
+    plot!(plt, [0, x1_m, x2_m], [0, y1_m, y2_m], lw=3, color=:blue, label="Mesuré", marker=:circle, markersize=10)
+    plot!(plt, [0, x1_s, x2_s], [0, y1_s, y2_s], lw=3, color=:red, ls=:dash, label="Simulé", marker=:circle, markersize=10)
+    
+    scatter!(plt, [0], [0], color=:black, markersize=12, label="Pivot")
+    
+    # Arc pour montrer la convention d'angle (cercle trigo: antihoraire = positif)
+    # Dessiner un petit arc depuis l'axe y négatif (θ=0, vers le bas) vers l'angle θ1
+    arc_radius = L1 * 0.3
+    arc_angles = range(0, θ1_data[frame], length=30)
+    # Pour θ=0 en bas: x = sin(θ), y = -cos(θ)
+    arc_x = arc_radius .* sin.(arc_angles)
+    arc_y = -arc_radius .* cos.(arc_angles)
+    plot!(plt, arc_x, arc_y, lw=2, color=:green, label="")
+    
+    # Flèche pour indiquer le sens (antihoraire = positif comme cercle trigo)
+    # Ajouter une annotation pour le sens
+    sens_θ1 = θ1_data[frame] >= 0 ? "antihoraire (+)" : "horaire (-)"
+    sens_θ2 = θ2_data[frame] >= 0 ? "antihoraire (+)" : "horaire (-)"
+    
+    # Annotations des angles avec le sens
+    annotate!(plt, -L_total*0.95, L_total*0.95, text("Convention: θ=0 en bas, + antihoraire", 7, :left, :gray))
+    annotate!(plt, -L_total*0.8, L_total*0.85, text("θ1 mesuré = $(round(rad2deg(θ1_data[frame]), digits=1))° ($sens_θ1)", 8, :left))
+    annotate!(plt, -L_total*0.8, L_total*0.75, text("θ2 mesuré = $(round(rad2deg(θ2_data[frame]), digits=1))° ($sens_θ2)", 8, :left))
+    annotate!(plt, -L_total*0.8, L_total*0.65, text("θ1 simulé = $(round(rad2deg(θ1_sim[frame]), digits=1))°", 8, :left, :red))
+    annotate!(plt, -L_total*0.8, L_total*0.55, text("θ2 simulé = $(round(rad2deg(θ2_sim[frame]), digits=1))°", 8, :left, :red))
+    
+    # Dessiner l'axe de référence (θ=0, vers le bas)
+    plot!(plt, [0, 0], [0, -arc_radius*1.5], lw=1, ls=:dot, color=:gray, label="θ=0")
+    
+    savefig(plt, filename)
+    println("Frame $frame sauvegardée: $filename")
+end
+
 # =============================================================================
 # Calcul et affichage des statistiques
 # =============================================================================
@@ -361,14 +426,14 @@ println("STATISTIQUES DU PENDULE DOUBLE")
 println("="^60)
 
 # Métriques de comparaison
-R2_θ1 = calculate_R2(θ1_data, θ1_sim_corrected)
-R2_θ2 = calculate_R2(θ2_data, θ2_sim_corrected)
-RMSE_θ1 = calculate_RMSE(θ1_data, θ1_sim_corrected)
-RMSE_θ2 = calculate_RMSE(θ2_data, θ2_sim_corrected)
-MAE_θ1 = calculate_MAE(θ1_data, θ1_sim_corrected)
-MAE_θ2 = calculate_MAE(θ2_data, θ2_sim_corrected)
-max_err_θ1 = calculate_max_error(θ1_data, θ1_sim_corrected)
-max_err_θ2 = calculate_max_error(θ2_data, θ2_sim_corrected)
+R2_θ1 = calculate_R2(θ1_data, θ1_sim)
+R2_θ2 = calculate_R2(θ2_data, θ2_sim)
+RMSE_θ1 = calculate_RMSE(θ1_data, θ1_sim)
+RMSE_θ2 = calculate_RMSE(θ2_data, θ2_sim)
+MAE_θ1 = calculate_MAE(θ1_data, θ1_sim)
+MAE_θ2 = calculate_MAE(θ2_data, θ2_sim)
+max_err_θ1 = calculate_max_error(θ1_data, θ1_sim)
+max_err_θ2 = calculate_max_error(θ2_data, θ2_sim)
 
 println("\n--- Métriques de comparaison simulation/mesures ---")
 println("Coefficient de détermination R²:")
@@ -408,13 +473,23 @@ end
 println("\n--- Conservation de l'énergie (simulation) ---")
 E_total, E_kinetic, E_potential = energy_over_time(t_data, sol_opt, m_opt[1], m_opt[2], L1, L2, g)
 E_variation = (maximum(E_total) - minimum(E_total)) / abs(mean(E_total)) * 100
+E_mean = mean(E_total)
+E_std = std(E_total)
+E_std_relative = E_std / abs(E_mean) * 100
+
 println("Énergie initiale: $(E_total[1]) J")
 println("Énergie finale: $(E_total[end]) J")
-println("Variation relative: $(E_variation)%")
+println("Énergie moyenne: $(E_mean) J")
+println("Écart-type (σ): $(E_std) J")
+println("Écart-type relatif: $(E_std_relative)%")
+println("Variation relative (max-min): $(E_variation)%")
+println("\n  → Si σ ≈ 10⁻¹⁴ à 10⁻¹⁰ J: erreurs d'arrondi machine (précision double)")
+println("  → Si σ ≈ 10⁻⁶ à 10⁻³ J: erreurs du solveur numérique (tolérance)")
+println("  → Si σ > 10⁻² J: possibles simplifications du modèle ou bug")
 
 # Divergence mesures vs simulation
 println("\n--- Divergence mesures vs simulation ---")
-div_analysis = analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim_corrected, θ2_sim_corrected, threshold_deg=10.0)
+div_analysis = analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, threshold_deg=10.0)
 
 println("Seuil de divergence: $(div_analysis.threshold_deg)°")
 if !isnan(div_analysis.t_divergence)
@@ -431,7 +506,7 @@ if div_analysis.divergence_rate > 0
 end
 
 # Fenêtre de validité du modèle
-t_valid, idx_valid = find_best_fit_window(t_data, θ1_data, θ2_data, θ1_sim_corrected, θ2_sim_corrected, max_error_deg=5.0)
+t_valid, idx_valid = find_best_fit_window(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, max_error_deg=5.0)
 println("\nFenêtre de validité (erreur < 5°): 0 à $(round(t_valid, digits=3)) s")
 if idx_valid > 0
     println("  → Le modèle est fiable pour $(round(100*idx_valid/length(t_data), digits=1))% de la durée")
@@ -443,9 +518,9 @@ end
 
 # Graphique de comparaison des angles
 p_angles = plot(t_data, θ1_data, label="θ1 mesuré", lw=2, title="Comparaison simulation vs données")
-plot!(p_angles, t_data, θ1_sim_corrected, label="θ1 simulé", ls=:dash, lw=2)
+plot!(p_angles, t_data, θ1_sim, label="θ1 simulé", ls=:dash, lw=2)
 plot!(p_angles, t_data, θ2_data, label="θ2 mesuré", lw=2)
-plot!(p_angles, t_data, θ2_sim_corrected, label="θ2 simulé", ls=:dash, lw=2)
+plot!(p_angles, t_data, θ2_sim, label="θ2 simulé", ls=:dash, lw=2)
 xlabel!(p_angles, "Temps (s)")
 ylabel!(p_angles, "Angle (rad)")
 savefig(p_angles, "assets/pendule_comparison.png")
@@ -465,6 +540,9 @@ plot!(p_energy, t_data, E_kinetic, label="E cinétique", lw=2)
 plot!(p_energy, t_data, E_potential, label="E potentielle", lw=2)
 xlabel!(p_energy, "Temps (s)")
 ylabel!(p_energy, "Énergie (J)")
+# Annotation avec l'écart-type
+annotate!(p_energy, t_data[end]*0.95, E_mean, 
+    text("σ = $(round(E_std, sigdigits=3)) J\n($(round(E_std_relative, sigdigits=2))%)", 8, :right))
 savefig(p_energy, "assets/energie.png")
 println("Graphique sauvegardé: assets/energie.png")
 
@@ -493,7 +571,10 @@ savefig(p_div_log, "assets/divergence_log.png")
 println("Graphique sauvegardé: assets/divergence_log.png")
 
 # Animation
-animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim_corrected, θ2_sim_corrected, L1, L2, fps=10, skip=2)
+animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, fps=10, skip=2)
+
+# Image de la frame 1
+save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data, frame=1)
 
 println("\n" * "="^60)
 println("Statistiques terminées!")
