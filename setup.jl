@@ -8,7 +8,9 @@ packages = [
     "OrdinaryDiffEq",  # Plus léger que DifferentialEquations
     "Plots",
     "Optim",
-    "LightXML"
+    "LightXML",
+    "DataFrames",
+    "CSV"
 ]
 
 println("Installing required packages...")

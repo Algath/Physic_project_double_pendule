@@ -513,6 +513,99 @@ if idx_valid > 0
 end
 
 # =============================================================================
+# Export des données de comparaison en CSV
+# =============================================================================
+
+println("\nExport des données de comparaison...")
+
+# Créer le DataFrame
+df_comparison = DataFrame(
+    temps_s = t_data,
+    theta1_mesure_rad = θ1_data,
+    theta1_simule_rad = θ1_sim,
+    theta2_mesure_rad = θ2_data,
+    theta2_simule_rad = θ2_sim,
+    theta1_mesure_deg = rad2deg.(θ1_data),
+    theta1_simule_deg = rad2deg.(θ1_sim),
+    theta2_mesure_deg = rad2deg.(θ2_data),
+    theta2_simule_deg = rad2deg.(θ2_sim),
+    erreur_theta1_deg = rad2deg.(abs.(θ1_data .- θ1_sim)),
+    erreur_theta2_deg = rad2deg.(abs.(θ2_data .- θ2_sim)),
+    erreur_totale_deg = rad2deg.(sqrt.((θ1_data .- θ1_sim).^2 .+ (θ2_data .- θ2_sim).^2))
+)
+
+# Sauvegarder
+csv_path = joinpath(@__DIR__, "assets", "comparison_data.csv")
+CSV.write(csv_path, df_comparison)
+println("Données exportées: $csv_path")
+
+# Afficher quelques statistiques sommaires
+println("\n=== VÉRIFICATION VISUELLE ===")
+println("Premières frames:")
+println(first(df_comparison, 5))
+
+println("\nFrames autour de t=0.5s:")
+idx_mid = findfirst(t -> t >= 0.5, t_data)
+if idx_mid !== nothing
+    println(df_comparison[max(1, idx_mid-2):min(length(t_data), idx_mid+2), :])
+end
+
+println("\nDernières frames:")
+println(last(df_comparison, 5))
+
+# Statistiques par période
+println("\n=== STATISTIQUES PAR PÉRIODE ===")
+for period in [(0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.0)]
+    t_start, t_end = period
+    idx_period = findall(t -> t_start <= t < t_end, t_data)
+    
+    if !isempty(idx_period)
+        err1_mean = mean(df_comparison.erreur_theta1_deg[idx_period])
+        err2_mean = mean(df_comparison.erreur_theta2_deg[idx_period])
+        err1_max = maximum(df_comparison.erreur_theta1_deg[idx_period])
+        err2_max = maximum(df_comparison.erreur_theta2_deg[idx_period])
+        
+        println("\nPériode $(t_start)s - $(t_end)s:")
+        println("  Erreur moyenne θ1: $(round(err1_mean, digits=2))°")
+        println("  Erreur moyenne θ2: $(round(err2_mean, digits=2))°")
+        println("  Erreur max θ1: $(round(err1_max, digits=2))°")
+        println("  Erreur max θ2: $(round(err2_max, digits=2))°")
+    end
+end
+
+# Vérification du calcul de R²
+println("\n=== VÉRIFICATION CALCUL R² ===")
+println("Calcul manuel pour θ1:")
+ss_res_1 = sum((θ1_data .- θ1_sim).^2)
+ss_tot_1 = sum((θ1_data .- mean(θ1_data)).^2)
+R2_1_manual = 1 - ss_res_1 / ss_tot_1
+println("  SS_res = $ss_res_1")
+println("  SS_tot = $ss_tot_1")
+println("  R² = $R2_1_manual")
+
+println("\nCalcul manuel pour θ2:")
+ss_res_2 = sum((θ2_data .- θ2_sim).^2)
+ss_tot_2 = sum((θ2_data .- mean(θ2_data)).^2)
+R2_2_manual = 1 - ss_res_2 / ss_tot_2
+println("  SS_res = $ss_res_2")
+println("  SS_tot = $ss_tot_2")
+println("  R² = $R2_2_manual")
+
+# Comparaison visuelle θ1 vs θ2
+println("\n=== COMPARAISON VISUELLE ===")
+println("Variance des mesures:")
+println("  Var(θ1_mesure) = $(round(var(θ1_data), digits=4)) rad²")
+println("  Var(θ2_mesure) = $(round(var(θ2_data), digits=4)) rad²")
+
+println("\nVariance des erreurs:")
+println("  Var(erreur_θ1) = $(round(var(θ1_data .- θ1_sim), digits=4)) rad²")
+println("  Var(erreur_θ2) = $(round(var(θ2_data .- θ2_sim), digits=4)) rad²")
+
+println("\nRatio erreur/signal:")
+println("  θ1: $(round(std(θ1_data .- θ1_sim) / std(θ1_data) * 100, digits=2))%")
+println("  θ2: $(round(std(θ2_data .- θ2_sim) / std(θ2_data) * 100, digits=2))%")
+
+# =============================================================================
 # Graphiques
 # =============================================================================
 

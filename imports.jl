@@ -7,5 +7,7 @@ using Plots                  # Pour la visualisation et animations
 using Optim                  # Pour l'optimisation des masses
 using Statistics             # Pour mean() dans RMSE/R² (standard library)
 using LightXML               # Pour parser les fichiers Tracker .trk (XML)
+using DataFrames             # Pour manipuler les données tabulaires
+using CSV                    # Pour lire et écrire des fichiers CSV
 
 println("All packages loaded successfully!")
