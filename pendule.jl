@@ -150,7 +150,7 @@ function position(θ1, L1, θ2, L2)
     return r1, r2
 end
 
-function equations_double_pendulum!(du, u, p, t)
+function equations_double_pendulum(du, u, p, t)
     θ1, ω1, θ2, ω2 = u
     m1, m2, L1, L2, g = p
     
@@ -176,7 +176,7 @@ function simulate_pendulum(m1, m2, L1, L2, g, θ1_0, ω1_0, θ2_0, ω2_0, tspan,
     u0 = [θ1_0, ω1_0, θ2_0, ω2_0]
     p = [m1, m2, L1, L2, g]
     
-    prob = ODEProblem(equations_double_pendulum!, u0, tspan, p)
+    prob = ODEProblem(equations_double_pendulum, u0, tspan, p)
     sol = solve(prob, Tsit5(), saveat=saveat)
     
     return sol
@@ -366,7 +366,7 @@ println("  Erreur finale = $(rad2deg(abs(θ2_sim[end] - θ2_data[end])))°")
 m_opt = [m1_opt, m2_opt]
 u0 = [θ1_0, ω1_opt, θ2_0, ω2_opt]
 p_opt = [m1_opt, m2_opt, L1, L2, g]
-prob_opt = ODEProblem(equations_double_pendulum!, u0, (t_data[1], t_data[end]), p_opt)
+prob_opt = ODEProblem(equations_double_pendulum, u0, (t_data[1], t_data[end]), p_opt)
 
 println("\nOptimisation effectuée sur $(round(t_optim_end, digits=2))s ($idx_optim frames)")
 println("Simulation finale sur $(round(t_data[end], digits=2))s ($(length(t_data)) frames)")

@@ -58,8 +58,8 @@ function lyapunov_exponent(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; δ0=1e-8, dt=
     t_eval = collect(0:dt:T_max)
     
     # Simuler les deux trajectoires
-    prob_ref = ODEProblem(equations_double_pendulum!, u0_ref, tspan, p)
-    prob_pert = ODEProblem(equations_double_pendulum!, u0_pert, tspan, p)
+    prob_ref = ODEProblem(equations_double_pendulum, u0_ref, tspan, p)
+    prob_pert = ODEProblem(equations_double_pendulum, u0_pert, tspan, p)
     
     sol_ref = solve(prob_ref, Tsit5(), saveat=t_eval)
     sol_pert = solve(prob_pert, Tsit5(), saveat=t_eval)
@@ -129,8 +129,8 @@ function lyapunov_spectrum(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; n_perturbatio
         tspan = (0.0, T_max)
         t_eval = collect(0:dt:T_max)
         
-        prob_ref = ODEProblem(equations_double_pendulum!, u0_ref, tspan, p)
-        prob_pert = ODEProblem(equations_double_pendulum!, u0_pert, tspan, p)
+        prob_ref = ODEProblem(equations_double_pendulum, u0_ref, tspan, p)
+        prob_pert = ODEProblem(equations_double_pendulum, u0_pert, tspan, p)
         
         sol_ref = solve(prob_ref, Tsit5(), saveat=t_eval)
         sol_pert = solve(prob_pert, Tsit5(), saveat=t_eval)

@@ -1,0 +1,19 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.9'
+      - name: Install dependencies
+        run: julia --project=. -e "using Pkg; Pkg.instantiate()"
+      - name: Smoke check (imports)
+        run: julia --project=. -e "include(\"imports.jl\"); println(\"Imports OK\")"
+      # If you have tests, replace the smoke check with:
+      # - name: Run tests
+      #   run: julia --project=. -e "using Pkg; Pkg.test()"
