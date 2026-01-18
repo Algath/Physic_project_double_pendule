@@ -131,9 +131,8 @@ end
 
 function calculate_initial_velocities(θ1_data, θ2_data, dt)
     """
-    Calcule les vitesses angulaires initiales par différences finies centrées
+    Calcule les vitesses angulaires initiales par différences finies centrées (utilisation des 3 premiers points).
     """
-    # Utiliser les 3 premiers points pour une meilleure estimation
     ω1_0 = (θ1_data[3] - θ1_data[1]) / (2 * dt)
     ω2_0 = (θ2_data[3] - θ2_data[1]) / (2 * dt)
     
@@ -338,37 +337,59 @@ println("\n" * "="^60)
 println("SIMULATION FINALE")
 println("="^60)
 
+# Prolonger la simulation de 2 secondes
+t_extension = 2.0  # secondes supplémentaires
+t_final = t_data[end] + t_extension
+t_sim_extended = collect(0:dt:t_final)
+
+println("Période de données réelles : 0 - $(round(t_data[end], digits=2))s")
+println("Période d'extrapolation : $(round(t_data[end], digits=2)) - $(round(t_final, digits=2))s")
+println("Durée totale de simulation : $(round(t_final, digits=2))s")
+
 # Simulation avec paramètres optimisés
 sol_opt = simulate_pendulum(m1_opt, m2_opt, L1, L2, g, θ1_0, ω1_opt, θ2_0, ω2_opt,
-                            (t_data[1], t_data[end]), t_data)
+                            (0.0, t_final), t_sim_extended)
 
-θ1_sim = sol_opt[1, :]
-θ2_sim = sol_opt[3, :]
-# Corriger les tours multiples pour θ2
+global θ1_sim_full = sol_opt[1, :]
+global θ2_sim_full = sol_opt[3, :]
+global t_sim_full = t_sim_extended
+
+# Corriger les tours multiples pour θ2 UNIQUEMENT sur la période des données
 println("\n=== CORRECTION DES TOURS MULTIPLES ===")
-println("Avant correction:")
-println("  θ2_sim[end] = $(rad2deg(θ2_sim[end]))°")
-println("  θ2_data[end] = $(rad2deg(θ2_data[end]))°")
+n_data = length(θ1_data)
 
-# Ajuster pour matcher le nombre de tours
-for i in 1:length(θ2_sim)
-    diff = θ2_sim[i] - θ2_data[i]
+for i in 1:n_data
+    diff = θ2_sim_full[i] - θ2_data[i]
     n_tours = round(diff / (2π))
-    θ2_sim[i] -= n_tours * 2π
+    θ2_sim_full[i] -= n_tours * 2π
 end
 
-println("\nAprès correction:")
-println("  θ2_sim[end] = $(rad2deg(θ2_sim[end]))°")
-println("  θ2_data[end] = $(rad2deg(θ2_data[end]))°")
-println("  Erreur finale = $(rad2deg(abs(θ2_sim[end] - θ2_data[end])))°")
+println("Correction appliquée sur $(length(θ2_data)) points")
+println("Points d'extrapolation (sans correction) : $(length(θ2_sim_full) - length(θ2_data))")
+
+# Préparer les données pour statistiques.jl
+# Version tronquée pour les comparaisons
+global θ1_sim = θ1_sim_full[1:n_data]
+global θ2_sim = θ2_sim_full[1:n_data]
+
+# Recréer sol_opt pour statistiques.jl avec la bonne durée
+# (statistiques.jl utilise sol_opt pour calculer l'énergie)
+sol_opt_stats = simulate_pendulum(m1_opt, m2_opt, L1, L2, g, θ1_0, ω1_opt, θ2_0, ω2_opt,
+                                   (t_data[1], t_data[end]), t_data)
+
+println("\n=== DONNÉES POUR ANALYSE ===")
+println("Statistiques (comparaison) : $n_data points sur $(round(t_data[end], digits=2))s")
+println("Simulation complète : $(length(θ1_sim_full)) points sur $(round(t_final, digits=2))s")
 
 # Variables pour compatibilité avec statistiques.jl
 m_opt = [m1_opt, m2_opt]
 u0 = [θ1_0, ω1_opt, θ2_0, ω2_opt]
 p_opt = [m1_opt, m2_opt, L1, L2, g]
 prob_opt = ODEProblem(equations_double_pendulum, u0, (t_data[1], t_data[end]), p_opt)
+sol_opt = sol_opt_stats
 
 println("\nOptimisation effectuée sur $(round(t_optim_end, digits=2))s ($idx_optim frames)")
-println("Simulation finale sur $(round(t_data[end], digits=2))s ($(length(t_data)) frames)")
+println("Simulation finale sur $(round(t_final, digits=2))s ($(length(t_sim_extended)) frames)")
+println("Comparaison avec données sur $(round(t_data[end], digits=2))s ($n_data frames)")
 println("\nExécutez statistiques.jl pour les analyses détaillées.")
 println("="^60)

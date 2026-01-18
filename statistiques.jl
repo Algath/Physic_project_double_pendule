@@ -418,6 +418,128 @@ function save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data; frame=
 end
 
 # =============================================================================
+# Animation de l'extrapolation (simulation seule)
+# =============================================================================
+
+function animate_extrapolation(t_sim, θ1_sim, θ2_sim, L1, L2, t_data_end; fps=30, skip=2)
+    """Crée une animation GIF de la simulation complète (avec extrapolation)"""
+    
+    function pendulum_positions(θ1, θ2, L1, L2)
+        x1 = L1 * sin(θ1)
+        y1 = -L1 * cos(θ1)
+        x2 = x1 + L2 * sin(θ2)
+        y2 = y1 - L2 * cos(θ2)
+        return x1, y1, x2, y2
+    end
+    
+    L_total = (L1 + L2) * 1.3
+    
+    # Pré-calculer toutes les positions de la masse 2 pour le tracé
+    trace_x2 = Float64[]
+    trace_y2 = Float64[]
+    
+    for j in 1:length(t_sim)
+        _, _, x2, y2 = pendulum_positions(θ1_sim[j], θ2_sim[j], L1, L2)
+        push!(trace_x2, x2)
+        push!(trace_y2, y2)
+    end
+    
+    # Trouver l'index de fin des données réelles
+    idx_data_end = findfirst(t -> t >= t_data_end, t_sim)
+    if idx_data_end === nothing
+        idx_data_end = length(t_sim)
+    end
+    
+    println("Création de l'animation d'extrapolation...")
+    
+    anim = @animate for i in 1:skip:length(t_sim)
+        x1, y1, x2, y2 = pendulum_positions(θ1_sim[i], θ2_sim[i], L1, L2)
+        
+        # Déterminer si on est dans la zone d'extrapolation
+        in_extrapolation = i > idx_data_end
+        zone_text = in_extrapolation ? " [EXTRAPOLATION]" : ""
+        title_color = in_extrapolation ? :red : :blue
+        
+        plt = plot(
+            xlim=(-L_total, L_total),
+            ylim=(-L_total, L_total),
+            aspect_ratio=:equal,
+            legend=:topright,
+            title="Simulation - t = $(round(t_sim[i], digits=2)) s" * zone_text,
+            titlefontcolor=title_color,
+            xlabel="x (m)",
+            ylabel="y (m)",
+            size=(600, 600)
+        )
+        
+        # Tracé de la masse 2
+        # Partie données réelles en bleu
+        if idx_data_end > 1
+            plot!(plt, trace_x2[1:min(i, idx_data_end)], trace_y2[1:min(i, idx_data_end)], 
+                  lw=2, color=:blue, alpha=0.7, label="Tracé (données réelles)")
+        end
+        
+        # Partie extrapolation en rouge
+        if i > idx_data_end
+            plot!(plt, trace_x2[idx_data_end:i], trace_y2[idx_data_end:i], 
+                  lw=2, color=:red, alpha=0.7, label="Tracé (extrapolation)")
+        end
+        
+        # Pendule
+        pendulum_color = in_extrapolation ? :red : :blue
+        plot!(plt, [0, x1, x2], [0, y1, y2], lw=3, color=pendulum_color, 
+              label="Pendule simulé", marker=:circle, markersize=8)
+        
+        # Pivot
+        scatter!(plt, [0], [0], color=:black, markersize=10, label="Pivot")
+        
+        # Ligne de séparation (affichée une fois qu'on l'a dépassée)
+        if i > idx_data_end
+            # Marquer la dernière position avant extrapolation
+            scatter!(plt, [trace_x2[idx_data_end]], [trace_y2[idx_data_end]], 
+                    color=:green, markersize=12, marker=:star, 
+                    label="Fin données ($(round(t_data_end, digits=2))s)")
+        end
+        
+        # Annotation
+        if in_extrapolation
+            annotate!(plt, 0, L_total*0.9, 
+                     text("⚠ Prédiction du modèle\n(pas de données réelles)", 10, :center, :red))
+        end
+    end
+    
+    gif(anim, "assets/pendule_extrapolation.gif", fps=fps)
+    println("Animation d'extrapolation sauvegardée: assets/pendule_extrapolation.gif")
+    
+    # Image du tracé complet final
+    plt_final = plot(
+        xlim=(-L_total, L_total),
+        ylim=(-L_total, L_total),
+        aspect_ratio=:equal,
+        legend=:topright,
+        title="Tracé complet de la masse 2 (avec extrapolation)",
+        xlabel="x (m)",
+        ylabel="y (m)",
+        size=(600, 600)
+    )
+    
+    # Tracé complet
+    plot!(plt_final, trace_x2[1:idx_data_end], trace_y2[1:idx_data_end], 
+          lw=2, color=:blue, label="Données réelles (0-$(round(t_data_end, digits=2))s)")
+    plot!(plt_final, trace_x2[idx_data_end:end], trace_y2[idx_data_end:end], 
+          lw=2, color=:red, ls=:dash, label="Extrapolation ($(round(t_data_end, digits=2))-$(round(t_sim[end], digits=2))s)")
+    
+    # Marquer la transition
+    scatter!(plt_final, [trace_x2[idx_data_end]], [trace_y2[idx_data_end]], 
+            color=:green, markersize=12, marker=:star, label="Transition")
+    
+    scatter!(plt_final, [0], [0], color=:black, markersize=10, label="Pivot")
+    
+    savefig(plt_final, "assets/pendule_trace_extrapolation.png")
+    println("Tracé complet sauvegardé: assets/pendule_trace_extrapolation.png")
+end
+
+# =============================================================================
 # Calcul et affichage des statistiques
 # =============================================================================
 
@@ -669,6 +791,54 @@ animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, fps=10, s
 # Image de la frame 1
 save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data, frame=1)
 
+# =============================================================================
+# Visualisation de l'extrapolation (si disponible)
+# =============================================================================
+
+if @isdefined(θ1_sim_full) && @isdefined(θ2_sim_full) && @isdefined(t_sim_full)
+    println("\n" * "="^60)
+    println("VISUALISATION DE L'EXTRAPOLATION")
+    println("="^60)
+    
+    # Graphique avec extrapolation
+    p_extrap = plot(title="Simulation avec extrapolation", size=(900, 500))
+    
+    # Données réelles
+    plot!(p_extrap, t_data, rad2deg.(θ1_data), label="θ1 mesuré", lw=2, color=:blue)
+    plot!(p_extrap, t_data, rad2deg.(θ2_data), label="θ2 mesuré", lw=2, color=:orange)
+    
+    # Simulation complète
+    plot!(p_extrap, t_sim_full, rad2deg.(θ1_sim_full), label="θ1 simulé (complet)", 
+          ls=:dash, lw=2, color=:blue, alpha=0.7)
+    plot!(p_extrap, t_sim_full, rad2deg.(θ2_sim_full), label="θ2 simulé (complet)", 
+          ls=:dash, lw=2, color=:orange, alpha=0.7)
+    
+    # Ligne verticale pour séparer données réelles et extrapolation
+    vline!(p_extrap, [t_data[end]], label="Fin des données", 
+           ls=:dot, color=:red, lw=2)
+    
+    # Zone d'extrapolation en gris
+    vspan!(p_extrap, [t_data[end], t_sim_full[end]], 
+           alpha=0.1, color=:gray, label="Zone d'extrapolation")
+    
+    xlabel!(p_extrap, "Temps (s)")
+    ylabel!(p_extrap, "Angle (°)")
+    
+    savefig(p_extrap, "assets/extrapolation.png")
+    println("\nGraphique d'extrapolation sauvegardé: assets/extrapolation.png")
+    
+    # Animation de l'extrapolation (simulation seule, sans données mesurées)
+    println("\nCréation de l'animation d'extrapolation (simulation seule)...")
+    animate_extrapolation(t_sim_full, θ1_sim_full, θ2_sim_full, L1, L2, t_data[end], 
+                         fps=20, skip=2)
+    
+    println("\n⚠ ATTENTION: L'extrapolation au-delà de $(round(t_data[end], digits=2))s")
+    println("   ne correspond plus aux données réelles et montre seulement")
+    println("   la prédiction du modèle chaotique.")
+else
+    println("\n(Pas d'extrapolation disponible - simulation standard)")
+end
+
 println("\n" * "="^60)
-println("Statistiques terminées!")
+println("Analyse terminée!")
 println("="^60)
