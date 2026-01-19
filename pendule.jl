@@ -9,12 +9,10 @@ function load_tracker_positions(filepath::String)
     xdoc = parse_file(filepath)
     xroot = root(xdoc)
     
-    # Paramètres de calibration
     origin_x = 0.0
     origin_y = 0.0
     scale = 1.0
     
-    # Parcourir pour trouver ImageCoordSystem
     for prop in child_elements(xroot)
         if attribute(prop, "name") == "coords"
             for obj in child_elements(prop)
@@ -40,7 +38,6 @@ function load_tracker_positions(filepath::String)
         end
     end
     
-    # Extraire les données des PointMass
     mass_positions = Dict{String, Vector{Tuple{Float64, Float64}}}()
     
     for prop in child_elements(xroot)
@@ -67,7 +64,6 @@ function load_tracker_positions(filepath::String)
                                             end
                                         end
                                     end
-                                    # Convertir en coordonnées réelles (mètres)
                                     x_real = (x - origin_x) / scale
                                     y_real = (y - origin_y) / scale
                                     push!(positions, (x_real, y_real))
@@ -89,9 +85,6 @@ function load_tracker_positions(filepath::String)
 end
 
 function unwrap_angles(angles)
-    """
-    Corrige les sauts de 2π dans une série d'angles pour obtenir une trajectoire continue.
-    """
     unwrapped = mod.(angles, 2π)
     
     for i in 2:length(unwrapped)
@@ -114,10 +107,8 @@ function calculate_angles_from_positions(mass_A_positions, mass_B_positions)
         x1, y1 = mass_A_positions[i]
         x2, y2 = mass_B_positions[i]
         
-        # θ1 : angle du premier bras depuis la verticale
         θ1_raw[i] = atan(x1, y1)
         
-        # θ2 : angle du DEUXIÈME bras PAR RAPPORT AU PREMIER (angle relatif)
         dx = x2 - x1
         dy = y2 - y1
         θ2_raw[i] = atan(dx, dy)
@@ -130,12 +121,8 @@ function calculate_angles_from_positions(mass_A_positions, mass_B_positions)
 end
 
 function calculate_initial_velocities(θ1_data, θ2_data, dt)
-    """
-    Calcule les vitesses angulaires initiales par différences finies centrées (utilisation des 3 premiers points).
-    """
     ω1_0 = (θ1_data[3] - θ1_data[1]) / (2 * dt)
     ω2_0 = (θ2_data[3] - θ2_data[1]) / (2 * dt)
-    
     return ω1_0, ω2_0
 end
 
@@ -185,9 +172,9 @@ end
 # Paramètres physiques
 # =============================================================================
 
-L1 = 91.74 / 1000  # m
-L2 = 69.33 / 1000  # m
-g = 9.81           # m/s²
+L1 = 91.74 / 1000 # [m]
+L2 = 69.33 / 1000 # [m]
+g = 9.81 # [m/s²]
 
 # =============================================================================
 # Charger les données Tracker
@@ -196,10 +183,6 @@ g = 9.81           # m/s²
 println("Chargement des données Tracker...")
 trk_path = joinpath(@__DIR__, "assets", "First_Video_2s.trk")
 mass_positions, origin_x, origin_y, scale = load_tracker_positions(trk_path)
-
-println("  Origine: ($origin_x, $origin_y) pixels")
-println("  Échelle: $scale pixels/m")
-println("  Masses trouvées: $(keys(mass_positions))")
 
 dt = 0.01
 n_frames = 200
@@ -213,86 +196,49 @@ if haskey(mass_positions, "mass A") && haskey(mass_positions, "mass B")
     t_data = t_data[1:n_actual]
     
     θ1_data, θ2_data = calculate_angles_from_positions(mass_A[1:n_actual], mass_B[1:n_actual])
-    # Après le chargement des données, avant l'optimisation
-    println("\n=== DIAGNOSTIC GÉOMÉTRIQUE ===")
-    for frame in [1, 10, 50]
-        x1, y1 = mass_A[frame]
-        x2, y2 = mass_B[frame]
-        
-        # Calculer les deux versions
-        θ1_abs = atan(x1, y1)
-        θ2_abs = atan(x2, y2)          # Angle absolu
-        θ2_rel = atan(x2 - x1, y2 - y1) # Angle relatif
-        
-        println("\nFrame $frame:")
-        println("  Position A: ($(round(x1,digits=4)), $(round(y1,digits=4)))")
-        println("  Position B: ($(round(x2,digits=4)), $(round(y2,digits=4)))")
-        println("  θ1 = $(round(rad2deg(θ1_abs), digits=1))°")
-        println("  θ2 absolu = $(round(rad2deg(θ2_abs), digits=1))°")
-        println("  θ2 relatif = $(round(rad2deg(θ2_rel), digits=1))°")
-        println("  Différence θ2_abs - θ1 = $(round(rad2deg(θ2_abs - θ1_abs), digits=1))°")
-        println("  → θ2_relatif devrait ≈ (θ2_abs - θ1)")
-    end
     
     θ1_0 = θ1_data[1]
     θ2_0 = θ2_data[1]
     
-    # Calculer vitesses initiales estimées
     ω1_init, ω2_init = calculate_initial_velocities(θ1_data, θ2_data, dt)
     
-    println("\nConditions initiales estimées:")
-    println("  θ1_0 = $(rad2deg(θ1_0))°")
-    println("  θ2_0 = $(rad2deg(θ2_0))°")
-    println("  ω1_0 = $(rad2deg(ω1_init))°/s")
-    println("  ω2_0 = $(rad2deg(ω2_init))°/s")
-    println("  Nombre de frames: $n_actual")
+    println("Conditions initiales estimées:")
+    println("  θ1_0 = $(round(rad2deg(θ1_0), digits=1))°, θ2_0 = $(round(rad2deg(θ2_0), digits=1))°")
+    println("  ω1_0 = $(round(rad2deg(ω1_init), digits=1))°/s, ω2_0 = $(round(rad2deg(ω2_init), digits=1))°/s")
 else
-    error("Masses 'mass A' et 'mass B' non trouvées dans le fichier Tracker!")
+    error("Masses 'mass A' et 'mass B' non trouvées!")
 end
 
 # =============================================================================
 # Optimisation
 # =============================================================================
 
-t_optim_end = 0.5  # Optimiser sur 0.5s (fenêtre raisonnable avant divergence chaotique)
+t_optim_end = 0.5
 idx_optim = findlast(t -> t <= t_optim_end, t_data)
 t_optim = t_data[1:idx_optim]
 θ1_optim = θ1_data[1:idx_optim]
 θ2_optim = θ2_data[1:idx_optim]
 
 function objective_full(params)
-    """
-    Optimise m1, m2, ω1_0, ω2_0
-    params = [m1, m2, ω1_0, ω2_0]
-    """
-    m1 = params[1]
-    m2 = params[2]
-    ω1_0 = params[3]
-    ω2_0 = params[4]
+    m1, m2, ω1_0, ω2_0 = params
     
     sol = simulate_pendulum(m1, m2, L1, L2, g, θ1_0, ω1_0, θ2_0, ω2_0, 
                            (t_optim[1], t_optim[end]), t_optim)
     
     error = 0.0
     for i in 1:length(t_optim)
-        # Poids égaux pour θ1 et θ2
         error += (sol[1, i] - θ1_optim[i])^2 + (sol[3, i] - θ2_optim[i])^2
     end
     return error
 end
 
-println("\n" * "="^60)
-println("OPTIMISATION DES PARAMÈTRES")
-println("="^60)
 println("\nOptimisation de [m1, m2, ω1_0, ω2_0] sur $(t_optim_end)s...")
 
-# Valeurs initiales
-m1_init = 0.05  # kg
-m2_init = 0.03  # kg
+m1_init = 0.004
+m2_init = 0.003
 
-# Bornes de recherche
 lower = [0.001, 0.001, ω1_init - 3.0, ω2_init - 3.0]
-upper = [0.2,   0.2,   ω1_init + 3.0, ω2_init + 3.0]
+upper = [0.01,   0.01,   ω1_init + 3.0, ω2_init + 3.0]
 initial = [m1_init, m2_init, ω1_init, ω2_init]
 
 result = optimize(
@@ -304,49 +250,26 @@ result = optimize(
     Optim.Options(iterations=10000, show_trace=false)
 )
 
-# Résultats optimaux
 m1_opt = Optim.minimizer(result)[1]
 m2_opt = Optim.minimizer(result)[2]
 ω1_opt = Optim.minimizer(result)[3]
 ω2_opt = Optim.minimizer(result)[4]
 
-println("\n" * "="^60)
-println("RÉSULTATS DE L'OPTIMISATION")
-println("="^60)
-println("\nMasses optimales:")
-println("  m1 = $(round(m1_opt*1000, digits=2)) g")
-println("  m2 = $(round(m2_opt*1000, digits=2)) g")
-println("  Ratio m2/m1 = $(round(m2_opt/m1_opt, digits=3))")
-
-println("\nVitesses angulaires initiales optimales:")
-println("  ω1_0 = $(round(rad2deg(ω1_opt), digits=2))°/s (estimé: $(round(rad2deg(ω1_init), digits=2))°/s)")
-println("  ω2_0 = $(round(rad2deg(ω2_opt), digits=2))°/s (estimé: $(round(rad2deg(ω2_init), digits=2))°/s)")
-
-println("\nDifférence avec estimation initiale:")
-println("  Δω1 = $(round(rad2deg(ω1_opt - ω1_init), digits=2))°/s")
-println("  Δω2 = $(round(rad2deg(ω2_opt - ω2_init), digits=2))°/s")
-
-println("\nErreur finale = $(round(Optim.minimum(result), digits=6))")
-println("Convergence: $(Optim.converged(result))")
+println("\nRésultats de l'optimisation:")
+println("  m1 = $(round(m1_opt*1000, digits=1)) g, m2 = $(round(m2_opt*1000, digits=1)) g (ratio (m1+m2)/m1 = $(round((m1_opt+m2_opt)/m1_opt, digits=2)))")
+println("  ω1_0 = $(round(rad2deg(ω1_opt), digits=1))°/s, ω2_0 = $(round(rad2deg(ω2_opt), digits=1))°/s")
+println("  Erreur finale = $(round(Optim.minimum(result), digits=6))")
 
 # =============================================================================
 # Simulation finale
 # =============================================================================
 
-println("\n" * "="^60)
-println("SIMULATION FINALE")
-println("="^60)
-
-# Prolonger la simulation de 2 secondes
-t_extension = 2.0  # secondes supplémentaires
+t_extension = 2.0
 t_final = t_data[end] + t_extension
 t_sim_extended = collect(0:dt:t_final)
 
-println("Période de données réelles : 0 - $(round(t_data[end], digits=2))s")
-println("Période d'extrapolation : $(round(t_data[end], digits=2)) - $(round(t_final, digits=2))s")
-println("Durée totale de simulation : $(round(t_final, digits=2))s")
+println("\nSimulation sur $(round(t_final, digits=1))s (données réelles: $(round(t_data[end], digits=1))s + extrapolation: $(t_extension)s)")
 
-# Simulation avec paramètres optimisés
 sol_opt = simulate_pendulum(m1_opt, m2_opt, L1, L2, g, θ1_0, ω1_opt, θ2_0, ω2_opt,
                             (0.0, t_final), t_sim_extended)
 
@@ -354,8 +277,6 @@ global θ1_sim_full = sol_opt[1, :]
 global θ2_sim_full = sol_opt[3, :]
 global t_sim_full = t_sim_extended
 
-# Corriger les tours multiples pour θ2 UNIQUEMENT sur la période des données
-println("\n=== CORRECTION DES TOURS MULTIPLES ===")
 n_data = length(θ1_data)
 
 for i in 1:n_data
@@ -364,32 +285,16 @@ for i in 1:n_data
     θ2_sim_full[i] -= n_tours * 2π
 end
 
-println("Correction appliquée sur $(length(θ2_data)) points")
-println("Points d'extrapolation (sans correction) : $(length(θ2_sim_full) - length(θ2_data))")
-
-# Préparer les données pour statistiques.jl
-# Version tronquée pour les comparaisons
 global θ1_sim = θ1_sim_full[1:n_data]
 global θ2_sim = θ2_sim_full[1:n_data]
 
-# Recréer sol_opt pour statistiques.jl avec la bonne durée
-# (statistiques.jl utilise sol_opt pour calculer l'énergie)
 sol_opt_stats = simulate_pendulum(m1_opt, m2_opt, L1, L2, g, θ1_0, ω1_opt, θ2_0, ω2_opt,
                                    (t_data[1], t_data[end]), t_data)
 
-println("\n=== DONNÉES POUR ANALYSE ===")
-println("Statistiques (comparaison) : $n_data points sur $(round(t_data[end], digits=2))s")
-println("Simulation complète : $(length(θ1_sim_full)) points sur $(round(t_final, digits=2))s")
-
-# Variables pour compatibilité avec statistiques.jl
 m_opt = [m1_opt, m2_opt]
 u0 = [θ1_0, ω1_opt, θ2_0, ω2_opt]
 p_opt = [m1_opt, m2_opt, L1, L2, g]
 prob_opt = ODEProblem(equations_double_pendulum, u0, (t_data[1], t_data[end]), p_opt)
 sol_opt = sol_opt_stats
 
-println("\nOptimisation effectuée sur $(round(t_optim_end, digits=2))s ($idx_optim frames)")
-println("Simulation finale sur $(round(t_final, digits=2))s ($(length(t_sim_extended)) frames)")
-println("Comparaison avec données sur $(round(t_data[end], digits=2))s ($n_data frames)")
-println("\nExécutez statistiques.jl pour les analyses détaillées.")
-println("="^60)
+println("\n✓ Prêt pour statistiques.jl")

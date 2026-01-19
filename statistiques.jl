@@ -1,75 +1,49 @@
-# =============================================================================
-# Statistiques et visualisations du pendule double
-# =============================================================================
-
 include("pendule.jl")
 
 # =============================================================================
-# Fonctions de métriques pour comparer simulation et mesures
+# Fonctions de métriques
 # =============================================================================
 
 function calculate_R2(y_measured, y_simulated)
-    """Calcule le coefficient de détermination R²"""
     ss_res = sum((y_measured .- y_simulated).^2)
     ss_tot = sum((y_measured .- mean(y_measured)).^2)
     return 1 - ss_res / ss_tot
 end
 
 function calculate_RMSE(y_measured, y_simulated)
-    """Calcule l'erreur quadratique moyenne (RMSE)"""
     return sqrt(mean((y_measured .- y_simulated).^2))
 end
 
 function calculate_MAE(y_measured, y_simulated)
-    """Calcule l'erreur absolue moyenne (MAE)"""
     return mean(abs.(y_measured .- y_simulated))
 end
 
 function calculate_max_error(y_measured, y_simulated)
-    """Calcule l'erreur maximale"""
     return maximum(abs.(y_measured .- y_simulated))
 end
 
 # =============================================================================
-# Exposant de Lyapunov (chaos théorique)
+# Exposant de Lyapunov
 # =============================================================================
 
 function lyapunov_exponent(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; δ0=1e-8, dt=0.01)
-    """
-    Calcule l'exposant de Lyapunov maximal du pendule double.
-    
-    L'exposant de Lyapunov mesure la sensibilité aux conditions initiales.
-    Un exposant positif indique un comportement chaotique.
-    
-    Méthode: On simule deux trajectoires avec une petite perturbation δ0,
-    puis on mesure comment cette séparation évolue au cours du temps.
-    
-    λ = lim(t→∞) (1/t) * ln(|δ(t)| / |δ0|)
-    """
-    
-    # Conditions initiales pour la trajectoire de référence
     u0_ref = [θ1_0, 0.0, θ2_0, 0.0]
-    
-    # Conditions initiales perturbées (petite perturbation sur θ1)
     u0_pert = [θ1_0 + δ0, 0.0, θ2_0, 0.0]
     
     p = [m1, m2, L1, L2, g]
     tspan = (0.0, T_max)
     t_eval = collect(0:dt:T_max)
     
-    # Simuler les deux trajectoires
     prob_ref = ODEProblem(equations_double_pendulum, u0_ref, tspan, p)
     prob_pert = ODEProblem(equations_double_pendulum, u0_pert, tspan, p)
     
     sol_ref = solve(prob_ref, Tsit5(), saveat=t_eval)
     sol_pert = solve(prob_pert, Tsit5(), saveat=t_eval)
     
-    # Calculer la séparation au cours du temps
     n_points = length(t_eval)
     separations = zeros(n_points)
     
     for i in 1:n_points
-        # Distance dans l'espace des phases (θ1, ω1, θ2, ω2)
         δθ1 = sol_pert[1, i] - sol_ref[1, i]
         δω1 = sol_pert[2, i] - sol_ref[2, i]
         δθ2 = sol_pert[3, i] - sol_ref[3, i]
@@ -78,21 +52,15 @@ function lyapunov_exponent(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; δ0=1e-8, dt=
         separations[i] = sqrt(δθ1^2 + δω1^2 + δθ2^2 + δω2^2)
     end
     
-    # Éviter les valeurs nulles ou négatives pour le log
     separations = max.(separations, 1e-15)
-    
-    # Calculer l'exposant de Lyapunov par régression linéaire de ln(δ) vs t
     log_sep = log.(separations)
     
-    # Régression linéaire: ln(δ) = λ*t + ln(δ0)
-    # On utilise seulement les points où la séparation n'a pas saturé
-    valid_idx = findall(separations .< 10.0)  # Éviter la saturation
+    valid_idx = findall(separations .< 10.0)
     
     if length(valid_idx) > 10
         t_valid = t_eval[valid_idx]
         log_sep_valid = log_sep[valid_idx]
         
-        # Régression linéaire simple
         n = length(t_valid)
         sum_t = sum(t_valid)
         sum_log = sum(log_sep_valid)
@@ -108,17 +76,13 @@ function lyapunov_exponent(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; δ0=1e-8, dt=
 end
 
 function lyapunov_spectrum(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; n_perturbations=10, δ0=1e-8, dt=0.01)
-    """
-    Estime le spectre de Lyapunov en moyennant sur plusieurs directions de perturbation.
-    """
     λ_values = Float64[]
     
-    # Perturbations dans différentes directions de l'espace des phases
     perturbation_directions = [
-        [1.0, 0.0, 0.0, 0.0],  # θ1
-        [0.0, 1.0, 0.0, 0.0],  # ω1
-        [0.0, 0.0, 1.0, 0.0],  # θ2
-        [0.0, 0.0, 0.0, 1.0],  # ω2
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
     ]
     
     for dir in perturbation_directions
@@ -135,7 +99,6 @@ function lyapunov_spectrum(m1, m2, L1, L2, g, θ1_0, θ2_0, T_max; n_perturbatio
         sol_ref = solve(prob_ref, Tsit5(), saveat=t_eval)
         sol_pert = solve(prob_pert, Tsit5(), saveat=t_eval)
         
-        # Séparation finale
         δ_final = sqrt(sum((sol_pert[:, end] .- sol_ref[:, end]).^2))
         
         if δ_final > 1e-14
@@ -152,36 +115,19 @@ end
 # =============================================================================
 
 function analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim; threshold_deg=10.0)
-    """
-    Analyse la divergence entre les mesures expérimentales et la simulation.
-    
-    Retourne:
-    - t_divergence: temps où l'erreur dépasse le seuil
-    - errors_θ1, errors_θ2: erreurs au cours du temps
-    - error_total: erreur combinée (norme)
-    - divergence_rate: taux de croissance de l'erreur (pseudo-Lyapunov)
-    """
-    
     n = length(t_data)
     errors_θ1 = abs.(θ1_data .- θ1_sim)
     errors_θ2 = abs.(θ2_data .- θ2_sim)
     error_total = sqrt.(errors_θ1.^2 .+ errors_θ2.^2)
     
-    # Seuil en radians
     threshold_rad = deg2rad(threshold_deg)
     
-    # Trouver le moment de divergence (quand l'erreur dépasse le seuil)
     t_divergence = NaN
     idx_divergence = findfirst(error_total .> threshold_rad)
     if idx_divergence !== nothing
         t_divergence = t_data[idx_divergence]
     end
     
-    # Calculer le taux de divergence (fit exponentiel sur la partie croissante)
-    # On cherche: error(t) ≈ error(0) * exp(λ_div * t)
-    # Donc: ln(error) ≈ ln(error(0)) + λ_div * t
-    
-    # Utiliser seulement les points où l'erreur est significative et croissante
     valid_idx = findall((error_total .> 1e-6) .& (error_total .< 1.0))
     
     divergence_rate = NaN
@@ -189,7 +135,6 @@ function analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim; thresh
         t_valid = t_data[valid_idx]
         log_err_valid = log.(error_total[valid_idx])
         
-        # Régression linéaire
         n_pts = length(t_valid)
         sum_t = sum(t_valid)
         sum_log = sum(log_err_valid)
@@ -199,7 +144,6 @@ function analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim; thresh
         divergence_rate = (n_pts * sum_t_log - sum_t * sum_log) / (n_pts * sum_t2 - sum_t^2)
     end
     
-    # Temps de prédictibilité (temps pour que l'erreur soit multipliée par e)
     predictability_time = divergence_rate > 0 ? 1.0 / divergence_rate : Inf
     
     return (
@@ -214,14 +158,9 @@ function analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim; thresh
 end
 
 function find_best_fit_window(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim; max_error_deg=5.0)
-    """
-    Trouve la fenêtre temporelle où la simulation reste proche des mesures.
-    Utile pour déterminer jusqu'à quand le modèle est fiable.
-    """
     max_error_rad = deg2rad(max_error_deg)
     errors = sqrt.((θ1_data .- θ1_sim).^2 .+ (θ2_data .- θ2_sim).^2)
     
-    # Trouver le dernier index où l'erreur est acceptable
     last_good_idx = findlast(errors .<= max_error_rad)
     
     if last_good_idx === nothing
@@ -236,15 +175,11 @@ end
 # =============================================================================
 
 function calculate_energy(θ1, ω1, θ2, ω2, m1, m2, L1, L2, g)
-    """Calcule l'énergie totale du pendule double"""
-    
-    # Énergie cinétique
     v1_sq = (L1 * ω1)^2
     v2_sq = (L1 * ω1)^2 + (L2 * ω2)^2 + 2 * L1 * L2 * ω1 * ω2 * cos(θ1 - θ2)
     
     T = 0.5 * m1 * v1_sq + 0.5 * m2 * v2_sq
     
-    # Énergie potentielle (référence: pivot)
     y1 = -L1 * cos(θ1)
     y2 = y1 - L2 * cos(θ2)
     
@@ -254,7 +189,6 @@ function calculate_energy(θ1, ω1, θ2, ω2, m1, m2, L1, L2, g)
 end
 
 function energy_over_time(t_data, sol, m1, m2, L1, L2, g)
-    """Calcule l'évolution de l'énergie au cours du temps"""
     E_total = Float64[]
     E_kinetic = Float64[]
     E_potential = Float64[]
@@ -270,15 +204,11 @@ function energy_over_time(t_data, sol, m1, m2, L1, L2, g)
 end
 
 # =============================================================================
-# Animation du pendule double
+# Animations
 # =============================================================================
 
 function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; fps=30, skip=2)
-    """Crée une animation GIF du pendule double (mesuré vs simulé)"""
-    
     function pendulum_positions(θ1, θ2, L1, L2)
-        # Convention: θ=0 en bas, sens antihoraire positif
-        # x = L*sin(θ), y = -L*cos(θ)
         x1 = L1 * sin(θ1)
         y1 = -L1 * cos(θ1)
         x2 = x1 + L2 * sin(θ2)
@@ -288,7 +218,6 @@ function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; 
     
     L_total = (L1 + L2) * 1.3
     
-    # Pré-calculer toutes les positions de la masse 2 pour le tracé
     trace_x2_m = Float64[]
     trace_y2_m = Float64[]
     trace_x2_s = Float64[]
@@ -314,17 +243,15 @@ function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; 
             ylim=(-L_total, L_total),
             aspect_ratio=:equal,
             legend=:topright,
-            title="Pendule Double - t = $(round(t_data[i], digits=2)) s",
+            title="t = $(round(t_data[i], digits=2)) s",
             xlabel="x (m)",
             ylabel="y (m)",
             size=(600, 600)
         )
         
-        # Tracé de la masse 2
         plot!(plt, trace_x2_m[1:i], trace_y2_m[1:i], lw=1, color=:blue, alpha=0.5, label="Tracé mesuré")
         plot!(plt, trace_x2_s[1:i], trace_y2_s[1:i], lw=1, color=:red, alpha=0.5, label="Tracé simulé")
         
-        # Pendules
         plot!(plt, [0, x1_m, x2_m], [0, y1_m, y2_m], lw=3, color=:blue, label="Mesuré", marker=:circle, markersize=8)
         plot!(plt, [0, x1_s, x2_s], [0, y1_s, y2_s], lw=3, color=:red, ls=:dash, label="Simulé", marker=:circle, markersize=8)
         
@@ -332,9 +259,8 @@ function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; 
     end
     
     gif(anim, "assets/pendule_animation.gif", fps=fps)
-    println("Animation sauvegardée: assets/pendule_animation.gif")
+    println("✓ Animation sauvegardée: pendule_animation.gif")
     
-    # Image du tracé final
     plt_final = plot(
         xlim=(-L_total, L_total),
         ylim=(-L_total, L_total),
@@ -351,15 +277,185 @@ function animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2; 
     scatter!(plt_final, [0], [0], color=:black, markersize=10, label="Pivot")
     
     savefig(plt_final, "assets/pendule_trace.png")
-    println("Tracé final sauvegardé: assets/pendule_trace.png")
+    println("✓ Tracé final sauvegardé: pendule_trace.png")
 end
 
-function save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data; frame=1, filename="assets/pendule_frame1.png")
-    """Sauvegarde une frame spécifique du pendule double"""
-    
+function animate_extrapolation(t_sim, θ1_sim, θ2_sim, L1, L2, t_data_end; fps=30, skip=2)
     function pendulum_positions(θ1, θ2, L1, L2)
-        # Convention: θ=0 en bas, sens antihoraire positif
-        # x = L*sin(θ), y = -L*cos(θ)
+        x1 = L1 * sin(θ1)
+        y1 = -L1 * cos(θ1)
+        x2 = x1 + L2 * sin(θ2)
+        y2 = y1 - L2 * cos(θ2)
+        return x1, y1, x2, y2
+    end
+    
+    L_total = (L1 + L2) * 1.3
+    
+    trace_x2 = Float64[]
+    trace_y2 = Float64[]
+    
+    for j in 1:length(t_sim)
+        _, _, x2, y2 = pendulum_positions(θ1_sim[j], θ2_sim[j], L1, L2)
+        push!(trace_x2, x2)
+        push!(trace_y2, y2)
+    end
+    
+    idx_data_end = findfirst(t -> t >= t_data_end, t_sim)
+    if idx_data_end === nothing
+        idx_data_end = length(t_sim)
+    end
+    
+    println("Création de l'animation d'extrapolation...")
+    
+    anim = @animate for i in 1:skip:length(t_sim)
+        x1, y1, x2, y2 = pendulum_positions(θ1_sim[i], θ2_sim[i], L1, L2)
+        
+        in_extrapolation = i > idx_data_end
+        zone_text = in_extrapolation ? " [EXTRAPOLATION]" : ""
+        title_color = in_extrapolation ? :red : :blue
+        
+        plt = plot(
+            xlim=(-L_total, L_total),
+            ylim=(-L_total, L_total),
+            aspect_ratio=:equal,
+            legend=:topright,
+            title="t = $(round(t_sim[i], digits=2)) s" * zone_text,
+            titlefontcolor=title_color,
+            xlabel="x (m)",
+            ylabel="y (m)",
+            size=(600, 600)
+        )
+        
+        if idx_data_end > 1
+            plot!(plt, trace_x2[1:min(i, idx_data_end)], trace_y2[1:min(i, idx_data_end)], 
+                  lw=2, color=:blue, alpha=0.7, label="Données réelles")
+        end
+        
+        if i > idx_data_end
+            plot!(plt, trace_x2[idx_data_end:i], trace_y2[idx_data_end:i], 
+                  lw=2, color=:red, alpha=0.7, label="Extrapolation")
+        end
+        
+        pendulum_color = in_extrapolation ? :red : :blue
+        plot!(plt, [0, x1, x2], [0, y1, y2], lw=3, color=pendulum_color, 
+              label="Simulé", marker=:circle, markersize=8)
+        
+        scatter!(plt, [0], [0], color=:black, markersize=10, label="Pivot")
+        
+        if i > idx_data_end
+            scatter!(plt, [trace_x2[idx_data_end]], [trace_y2[idx_data_end]], 
+                    color=:green, markersize=12, marker=:star, 
+                    label="Fin données")
+        end
+        
+        if in_extrapolation
+            annotate!(plt, 0, L_total*0.9, 
+                     text("⚠ Prédiction du modèle", 10, :center, :red))
+        end
+    end
+    
+    gif(anim, "assets/pendule_extrapolation.gif", fps=fps)
+    println("✓ Animation extrapolation sauvegardée: pendule_extrapolation.gif")
+end
+
+# =============================================================================
+# Statistiques
+# =============================================================================
+
+println("\n" * "="^60)
+println("STATISTIQUES")
+println("="^60)
+
+R2_θ1 = calculate_R2(θ1_data, θ1_sim)
+R2_θ2 = calculate_R2(θ2_data, θ2_sim)
+RMSE_θ1 = calculate_RMSE(θ1_data, θ1_sim)
+RMSE_θ2 = calculate_RMSE(θ2_data, θ2_sim)
+MAE_θ1 = calculate_MAE(θ1_data, θ1_sim)
+MAE_θ2 = calculate_MAE(θ2_data, θ2_sim)
+
+println("\nMétriques simulation/mesures:")
+println("  R²: θ1=$(round(R2_θ1, digits=4)), θ2=$(round(R2_θ2, digits=4))")
+println("  RMSE: θ1=$(round(rad2deg(RMSE_θ1), digits=2))°, θ2=$(round(rad2deg(RMSE_θ2), digits=2))°")
+println("  MAE: θ1=$(round(rad2deg(MAE_θ1), digits=2))°, θ2=$(round(rad2deg(MAE_θ2), digits=2))°")
+
+println("\nExposant de Lyapunov:")
+λ, t_lyap, separations = lyapunov_exponent(m_opt[1], m_opt[2], L1, L2, g, -θ1_0, θ2_0, 2.0)
+println("  λ = $(round(λ, digits=3)) s⁻¹")
+if λ > 0
+    println("  → Système CHAOTIQUE (temps de prédictibilité: $(round(1/λ, digits=2))s)")
+else
+    println("  → Système régulier")
+end
+
+println("\nÉnergie (simulation):")
+E_total, E_kinetic, E_potential = energy_over_time(t_data, sol_opt, m_opt[1], m_opt[2], L1, L2, g)
+E_std = std(E_total)
+E_std_relative = E_std / abs(mean(E_total)) * 100
+println("  E initiale: $(round(E_total[1], digits=6)) J")
+println("  σ(E): $(round(E_std, sigdigits=3)) J ($(round(E_std_relative, digits=3))%)")
+
+println("\nDivergence mesures/simulation:")
+div_analysis = analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, threshold_deg=10.0)
+if !isnan(div_analysis.t_divergence)
+    println("  ⚠ Divergence à t = $(round(div_analysis.t_divergence, digits=2))s")
+else
+    println("  ✓ Pas de divergence >10°")
+end
+
+t_valid, idx_valid = find_best_fit_window(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, max_error_deg=5.0)
+println("  Fenêtre valide (erreur <5°): 0-$(round(t_valid, digits=2))s ($(round(100*idx_valid/length(t_data), digits=1))%)")
+
+# =============================================================================
+# Export CSV
+# =============================================================================
+
+df_comparison = DataFrame(
+    temps_s = t_data,
+    theta1_mesure_deg = rad2deg.(θ1_data),
+    theta1_simule_deg = rad2deg.(θ1_sim),
+    theta2_mesure_deg = rad2deg.(θ2_data),
+    theta2_simule_deg = rad2deg.(θ2_sim),
+    erreur_theta1_deg = rad2deg.(abs.(θ1_data .- θ1_sim)),
+    erreur_theta2_deg = rad2deg.(abs.(θ2_data .- θ2_sim))
+)
+
+CSV.write("assets/comparison_data.csv", df_comparison)
+println("\n✓ Données exportées: comparison_data.csv")
+
+# =============================================================================
+# Graphiques
+# =============================================================================
+
+p_angles = plot(t_data, rad2deg.(θ1_data), label="θ1 mesuré", lw=2, title="Comparaison")
+plot!(p_angles, t_data, rad2deg.(θ1_sim), label="θ1 simulé", ls=:dash, lw=2)
+plot!(p_angles, t_data, rad2deg.(θ2_data), label="θ2 mesuré", lw=2)
+plot!(p_angles, t_data, rad2deg.(θ2_sim), label="θ2 simulé", ls=:dash, lw=2)
+xlabel!(p_angles, "Temps (s)")
+ylabel!(p_angles, "Angle (°)")
+savefig(p_angles, "assets/pendule_comparison.png")
+
+p_energy = plot(t_data, E_total, label="E totale", lw=2, title="Énergie")
+plot!(p_energy, t_data, E_kinetic, label="E cinétique", lw=2)
+plot!(p_energy, t_data, E_potential, label="E potentielle", lw=2)
+xlabel!(p_energy, "Temps (s)")
+ylabel!(p_energy, "Énergie (J)")
+savefig(p_energy, "assets/energie.png")
+
+p_div = plot(t_data, rad2deg.(div_analysis.errors_θ1), label="Erreur θ1", lw=2, title="Divergence")
+plot!(p_div, t_data, rad2deg.(div_analysis.errors_θ2), label="Erreur θ2", lw=2)
+plot!(p_div, t_data, rad2deg.(div_analysis.error_total), label="Erreur totale", lw=2, color=:red)
+hline!(p_div, [10.0], label="Seuil 10°", ls=:dash, color=:black)
+xlabel!(p_div, "Temps (s)")
+ylabel!(p_div, "Erreur (°)")
+savefig(p_div, "assets/divergence.png")
+
+println("\n✓ Graphiques sauvegardés")
+
+animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, fps=10, skip=2)
+
+# Frame 1 avec masses et longueurs
+function save_frame_detailed(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, m1, m2, t_data; frame=1)
+    function pendulum_positions(θ1, θ2, L1, L2)
         x1 = L1 * sin(θ1)
         y1 = -L1 * cos(θ1)
         x2 = x1 + L2 * sin(θ2)
@@ -377,468 +473,63 @@ function save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data; frame=
         ylim=(-L_total, L_total),
         aspect_ratio=:equal,
         legend=:topright,
-        title="Pendule Double - Frame $frame (t = $(round(t_data[frame], digits=3)) s)",
+        title="Pendule Double - t = $(round(t_data[frame], digits=3)) s",
         xlabel="x (m)",
         ylabel="y (m)",
-        size=(600, 600)
+        size=(700, 700)
     )
     
-    # Pendules
     plot!(plt, [0, x1_m, x2_m], [0, y1_m, y2_m], lw=3, color=:blue, label="Mesuré", marker=:circle, markersize=10)
     plot!(plt, [0, x1_s, x2_s], [0, y1_s, y2_s], lw=3, color=:red, ls=:dash, label="Simulé", marker=:circle, markersize=10)
     
     scatter!(plt, [0], [0], color=:black, markersize=12, label="Pivot")
     
-    # Arc pour montrer la convention d'angle (cercle trigo: antihoraire = positif)
-    # Dessiner un petit arc depuis l'axe y négatif (θ=0, vers le bas) vers l'angle θ1
-    arc_radius = L1 * 0.3
-    arc_angles = range(0, θ1_data[frame], length=30)
-    # Pour θ=0 en bas: x = sin(θ), y = -cos(θ)
-    arc_x = arc_radius .* sin.(arc_angles)
-    arc_y = -arc_radius .* cos.(arc_angles)
-    plot!(plt, arc_x, arc_y, lw=2, color=:green, label="")
+    # Annotations des masses et longueurs
+    #= annotate!(plt, x1_m*0.5, y1_m*0.5, text("L₁ = $(round(L1*1000, digits=1)) mm", 9, :blue))
+    annotate!(plt, (x1_m+x2_m)*0.5, (y1_m+y2_m)*0.5, text("L₂ = $(round(L2*1000, digits=1)) mm", 9, :blue))
     
-    # Flèche pour indiquer le sens (antihoraire = positif comme cercle trigo)
-    # Ajouter une annotation pour le sens
-    sens_θ1 = θ1_data[frame] >= 0 ? "antihoraire (+)" : "horaire (-)"
-    sens_θ2 = θ2_data[frame] >= 0 ? "antihoraire (+)" : "horaire (-)"
+    annotate!(plt, x1_m, y1_m - 0.02, text("m₁ = $(round(m1*1000, digits=1)) g", 9, :blue, :bottom))
+    annotate!(plt, x2_m, y2_m - 0.02, text("m₂ = $(round(m2*1000, digits=1)) g", 9, :blue, :bottom)) =#
     
-    # Annotations des angles avec le sens
-    annotate!(plt, -L_total*0.95, L_total*0.95, text("Convention: θ=0 en bas, + antihoraire", 7, :left, :gray))
-    annotate!(plt, -L_total*0.8, L_total*0.85, text("θ1 mesuré = $(round(rad2deg(θ1_data[frame]), digits=1))° ($sens_θ1)", 8, :left))
-    annotate!(plt, -L_total*0.8, L_total*0.75, text("θ2 mesuré = $(round(rad2deg(θ2_data[frame]), digits=1))° ($sens_θ2)", 8, :left))
-    annotate!(plt, -L_total*0.8, L_total*0.65, text("θ1 simulé = $(round(rad2deg(θ1_sim[frame]), digits=1))°", 8, :left, :red))
-    annotate!(plt, -L_total*0.8, L_total*0.55, text("θ2 simulé = $(round(rad2deg(θ2_sim[frame]), digits=1))°", 8, :left, :red))
+    # Paramètres système
+    annotate!(plt, -L_total*0.95, L_total*0.95, 
+             text("Paramètres système:", 8, :left, :black, :bold))
+    annotate!(plt, -L_total*0.95, L_total*0.88, 
+             text("m₁ = $(round(m1*1000, digits=1)) g", 8, :left))
+    annotate!(plt, -L_total*0.95, L_total*0.82, 
+             text("m₂ = $(round(m2*1000, digits=1)) g", 8, :left))
+    annotate!(plt, -L_total*0.95, L_total*0.76, 
+             text("L₁ = $(round(L1*1000, digits=1)) mm", 8, :left))
+    annotate!(plt, -L_total*0.95, L_total*0.70, 
+             text("L₂ = $(round(L2*1000, digits=1)) mm", 8, :left))
+    annotate!(plt, -L_total*0.95, L_total*0.64, 
+             text("(m₁+m₂)/m₁ = $(round((m1+m2)/m1, digits=2))", 8, :left))
     
-    # Dessiner l'axe de référence (θ=0, vers le bas)
-    plot!(plt, [0, 0], [0, -arc_radius*1.5], lw=1, ls=:dot, color=:gray, label="θ=0")
-    
-    savefig(plt, filename)
-    println("Frame $frame sauvegardée: $filename")
+    savefig(plt, "assets/pendule_frame1.png")
+    println("✓ Frame détaillée sauvegardée: pendule_frame1.png")
 end
 
-# =============================================================================
-# Animation de l'extrapolation (simulation seule)
-# =============================================================================
-
-function animate_extrapolation(t_sim, θ1_sim, θ2_sim, L1, L2, t_data_end; fps=30, skip=2)
-    """Crée une animation GIF de la simulation complète (avec extrapolation)"""
-    
-    function pendulum_positions(θ1, θ2, L1, L2)
-        x1 = L1 * sin(θ1)
-        y1 = -L1 * cos(θ1)
-        x2 = x1 + L2 * sin(θ2)
-        y2 = y1 - L2 * cos(θ2)
-        return x1, y1, x2, y2
-    end
-    
-    L_total = (L1 + L2) * 1.3
-    
-    # Pré-calculer toutes les positions de la masse 2 pour le tracé
-    trace_x2 = Float64[]
-    trace_y2 = Float64[]
-    
-    for j in 1:length(t_sim)
-        _, _, x2, y2 = pendulum_positions(θ1_sim[j], θ2_sim[j], L1, L2)
-        push!(trace_x2, x2)
-        push!(trace_y2, y2)
-    end
-    
-    # Trouver l'index de fin des données réelles
-    idx_data_end = findfirst(t -> t >= t_data_end, t_sim)
-    if idx_data_end === nothing
-        idx_data_end = length(t_sim)
-    end
-    
-    println("Création de l'animation d'extrapolation...")
-    
-    anim = @animate for i in 1:skip:length(t_sim)
-        x1, y1, x2, y2 = pendulum_positions(θ1_sim[i], θ2_sim[i], L1, L2)
-        
-        # Déterminer si on est dans la zone d'extrapolation
-        in_extrapolation = i > idx_data_end
-        zone_text = in_extrapolation ? " [EXTRAPOLATION]" : ""
-        title_color = in_extrapolation ? :red : :blue
-        
-        plt = plot(
-            xlim=(-L_total, L_total),
-            ylim=(-L_total, L_total),
-            aspect_ratio=:equal,
-            legend=:topright,
-            title="Simulation - t = $(round(t_sim[i], digits=2)) s" * zone_text,
-            titlefontcolor=title_color,
-            xlabel="x (m)",
-            ylabel="y (m)",
-            size=(600, 600)
-        )
-        
-        # Tracé de la masse 2
-        # Partie données réelles en bleu
-        if idx_data_end > 1
-            plot!(plt, trace_x2[1:min(i, idx_data_end)], trace_y2[1:min(i, idx_data_end)], 
-                  lw=2, color=:blue, alpha=0.7, label="Tracé (données réelles)")
-        end
-        
-        # Partie extrapolation en rouge
-        if i > idx_data_end
-            plot!(plt, trace_x2[idx_data_end:i], trace_y2[idx_data_end:i], 
-                  lw=2, color=:red, alpha=0.7, label="Tracé (extrapolation)")
-        end
-        
-        # Pendule
-        pendulum_color = in_extrapolation ? :red : :blue
-        plot!(plt, [0, x1, x2], [0, y1, y2], lw=3, color=pendulum_color, 
-              label="Pendule simulé", marker=:circle, markersize=8)
-        
-        # Pivot
-        scatter!(plt, [0], [0], color=:black, markersize=10, label="Pivot")
-        
-        # Ligne de séparation (affichée une fois qu'on l'a dépassée)
-        if i > idx_data_end
-            # Marquer la dernière position avant extrapolation
-            scatter!(plt, [trace_x2[idx_data_end]], [trace_y2[idx_data_end]], 
-                    color=:green, markersize=12, marker=:star, 
-                    label="Fin données ($(round(t_data_end, digits=2))s)")
-        end
-        
-        # Annotation
-        if in_extrapolation
-            annotate!(plt, 0, L_total*0.9, 
-                     text("⚠ Prédiction du modèle\n(pas de données réelles)", 10, :center, :red))
-        end
-    end
-    
-    gif(anim, "assets/pendule_extrapolation.gif", fps=fps)
-    println("Animation d'extrapolation sauvegardée: assets/pendule_extrapolation.gif")
-    
-    # Image du tracé complet final
-    plt_final = plot(
-        xlim=(-L_total, L_total),
-        ylim=(-L_total, L_total),
-        aspect_ratio=:equal,
-        legend=:topright,
-        title="Tracé complet de la masse 2 (avec extrapolation)",
-        xlabel="x (m)",
-        ylabel="y (m)",
-        size=(600, 600)
-    )
-    
-    # Tracé complet
-    plot!(plt_final, trace_x2[1:idx_data_end], trace_y2[1:idx_data_end], 
-          lw=2, color=:blue, label="Données réelles (0-$(round(t_data_end, digits=2))s)")
-    plot!(plt_final, trace_x2[idx_data_end:end], trace_y2[idx_data_end:end], 
-          lw=2, color=:red, ls=:dash, label="Extrapolation ($(round(t_data_end, digits=2))-$(round(t_sim[end], digits=2))s)")
-    
-    # Marquer la transition
-    scatter!(plt_final, [trace_x2[idx_data_end]], [trace_y2[idx_data_end]], 
-            color=:green, markersize=12, marker=:star, label="Transition")
-    
-    scatter!(plt_final, [0], [0], color=:black, markersize=10, label="Pivot")
-    
-    savefig(plt_final, "assets/pendule_trace_extrapolation.png")
-    println("Tracé complet sauvegardé: assets/pendule_trace_extrapolation.png")
-end
-
-# =============================================================================
-# Calcul et affichage des statistiques
-# =============================================================================
-
-println("\n" * "="^60)
-println("STATISTIQUES DU PENDULE DOUBLE")
-println("="^60)
-
-# Métriques de comparaison
-R2_θ1 = calculate_R2(θ1_data, θ1_sim)
-R2_θ2 = calculate_R2(θ2_data, θ2_sim)
-RMSE_θ1 = calculate_RMSE(θ1_data, θ1_sim)
-RMSE_θ2 = calculate_RMSE(θ2_data, θ2_sim)
-MAE_θ1 = calculate_MAE(θ1_data, θ1_sim)
-MAE_θ2 = calculate_MAE(θ2_data, θ2_sim)
-max_err_θ1 = calculate_max_error(θ1_data, θ1_sim)
-max_err_θ2 = calculate_max_error(θ2_data, θ2_sim)
-
-println("\n--- Métriques de comparaison simulation/mesures ---")
-println("Coefficient de détermination R²:")
-println("  θ1: $R2_θ1")
-println("  θ2: $R2_θ2")
-println("\nErreur quadratique moyenne (RMSE):")
-println("  θ1: $(rad2deg(RMSE_θ1))°  ($(RMSE_θ1) rad)")
-println("  θ2: $(rad2deg(RMSE_θ2))°  ($(RMSE_θ2) rad)")
-println("\nErreur absolue moyenne (MAE):")
-println("  θ1: $(rad2deg(MAE_θ1))°")
-println("  θ2: $(rad2deg(MAE_θ2))°")
-println("\nErreur maximale:")
-println("  θ1: $(rad2deg(max_err_θ1))°")
-println("  θ2: $(rad2deg(max_err_θ2))°")
-
-# Exposant de Lyapunov
-println("\n--- Exposant de Lyapunov ---")
-λ, t_lyap, separations = lyapunov_exponent(m_opt[1], m_opt[2], L1, L2, g, -θ1_0, θ2_0, 2.0)
-println("Exposant de Lyapunov maximal: λ = $λ s⁻¹")
-
-if λ > 0
-    println("  → Système CHAOTIQUE (λ > 0)")
-    println("  → Temps de prédictibilité (Lyapunov time): $(1/λ) s")
-else
-    println("  → Système régulier (λ ≤ 0)")
-end
-
-# Spectre de Lyapunov
-λ_spectrum = lyapunov_spectrum(m_opt[1], m_opt[2], L1, L2, g, -θ1_0, θ2_0, 2.0)
-println("\nSpectre de Lyapunov (4 directions):")
-for (i, λi) in enumerate(λ_spectrum)
-    dir_names = ["θ1", "ω1", "θ2", "ω2"]
-    println("  λ_$(dir_names[i]) = $λi s⁻¹")
-end
-
-# Énergie
-println("\n--- Conservation de l'énergie (simulation) ---")
-E_total, E_kinetic, E_potential = energy_over_time(t_data, sol_opt, m_opt[1], m_opt[2], L1, L2, g)
-E_variation = (maximum(E_total) - minimum(E_total)) / abs(mean(E_total)) * 100
-E_mean = mean(E_total)
-E_std = std(E_total)
-E_std_relative = E_std / abs(E_mean) * 100
-
-println("Énergie initiale: $(E_total[1]) J")
-println("Énergie finale: $(E_total[end]) J")
-println("Énergie moyenne: $(E_mean) J")
-println("Écart-type (σ): $(E_std) J")
-println("Écart-type relatif: $(E_std_relative)%")
-println("Variation relative (max-min): $(E_variation)%")
-println("\n  → Si σ ≈ 10⁻¹⁴ à 10⁻¹⁰ J: erreurs d'arrondi machine (précision double)")
-println("  → Si σ ≈ 10⁻⁶ à 10⁻³ J: erreurs du solveur numérique (tolérance)")
-println("  → Si σ > 10⁻² J: possibles simplifications du modèle ou bug")
-
-# Divergence mesures vs simulation
-println("\n--- Divergence mesures vs simulation ---")
-div_analysis = analyze_divergence(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, threshold_deg=10.0)
-
-println("Seuil de divergence: $(div_analysis.threshold_deg)°")
-if !isnan(div_analysis.t_divergence)
-    println("⚠ Moment de divergence: t = $(round(div_analysis.t_divergence, digits=3)) s")
-    println("  (l'erreur dépasse $(div_analysis.threshold_deg)° à partir de ce moment)")
-else
-    println("✓ Pas de divergence > $(div_analysis.threshold_deg)° sur la durée mesurée")
-end
-
-println("\nTaux de divergence (pseudo-Lyapunov): $(round(div_analysis.divergence_rate, digits=3)) s⁻¹")
-if div_analysis.divergence_rate > 0
-    println("  → Temps de prédictibilité du modèle: $(round(div_analysis.predictability_time, digits=3)) s")
-    println("  → L'erreur double tous les $(round(log(2)/div_analysis.divergence_rate, digits=3)) s")
-end
-
-# Fenêtre de validité du modèle
-t_valid, idx_valid = find_best_fit_window(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, max_error_deg=5.0)
-println("\nFenêtre de validité (erreur < 5°): 0 à $(round(t_valid, digits=3)) s")
-if idx_valid > 0
-    println("  → Le modèle est fiable pour $(round(100*idx_valid/length(t_data), digits=1))% de la durée")
-end
-
-# =============================================================================
-# Export des données de comparaison en CSV
-# =============================================================================
-
-println("\nExport des données de comparaison...")
-
-# Créer le DataFrame
-df_comparison = DataFrame(
-    temps_s = t_data,
-    theta1_mesure_rad = θ1_data,
-    theta1_simule_rad = θ1_sim,
-    theta2_mesure_rad = θ2_data,
-    theta2_simule_rad = θ2_sim,
-    theta1_mesure_deg = rad2deg.(θ1_data),
-    theta1_simule_deg = rad2deg.(θ1_sim),
-    theta2_mesure_deg = rad2deg.(θ2_data),
-    theta2_simule_deg = rad2deg.(θ2_sim),
-    erreur_theta1_deg = rad2deg.(abs.(θ1_data .- θ1_sim)),
-    erreur_theta2_deg = rad2deg.(abs.(θ2_data .- θ2_sim)),
-    erreur_totale_deg = rad2deg.(sqrt.((θ1_data .- θ1_sim).^2 .+ (θ2_data .- θ2_sim).^2))
-)
-
-# Sauvegarder
-csv_path = joinpath(@__DIR__, "assets", "comparison_data.csv")
-CSV.write(csv_path, df_comparison)
-println("Données exportées: $csv_path")
-
-# Afficher quelques statistiques sommaires
-println("\n=== VÉRIFICATION VISUELLE ===")
-println("Premières frames:")
-println(first(df_comparison, 5))
-
-println("\nFrames autour de t=0.5s:")
-idx_mid = findfirst(t -> t >= 0.5, t_data)
-if idx_mid !== nothing
-    println(df_comparison[max(1, idx_mid-2):min(length(t_data), idx_mid+2), :])
-end
-
-println("\nDernières frames:")
-println(last(df_comparison, 5))
-
-# Statistiques par période
-println("\n=== STATISTIQUES PAR PÉRIODE ===")
-for period in [(0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.0)]
-    t_start, t_end = period
-    idx_period = findall(t -> t_start <= t < t_end, t_data)
-    
-    if !isempty(idx_period)
-        err1_mean = mean(df_comparison.erreur_theta1_deg[idx_period])
-        err2_mean = mean(df_comparison.erreur_theta2_deg[idx_period])
-        err1_max = maximum(df_comparison.erreur_theta1_deg[idx_period])
-        err2_max = maximum(df_comparison.erreur_theta2_deg[idx_period])
-        
-        println("\nPériode $(t_start)s - $(t_end)s:")
-        println("  Erreur moyenne θ1: $(round(err1_mean, digits=2))°")
-        println("  Erreur moyenne θ2: $(round(err2_mean, digits=2))°")
-        println("  Erreur max θ1: $(round(err1_max, digits=2))°")
-        println("  Erreur max θ2: $(round(err2_max, digits=2))°")
-    end
-end
-
-# Vérification du calcul de R²
-println("\n=== VÉRIFICATION CALCUL R² ===")
-println("Calcul manuel pour θ1:")
-ss_res_1 = sum((θ1_data .- θ1_sim).^2)
-ss_tot_1 = sum((θ1_data .- mean(θ1_data)).^2)
-R2_1_manual = 1 - ss_res_1 / ss_tot_1
-println("  SS_res = $ss_res_1")
-println("  SS_tot = $ss_tot_1")
-println("  R² = $R2_1_manual")
-
-println("\nCalcul manuel pour θ2:")
-ss_res_2 = sum((θ2_data .- θ2_sim).^2)
-ss_tot_2 = sum((θ2_data .- mean(θ2_data)).^2)
-R2_2_manual = 1 - ss_res_2 / ss_tot_2
-println("  SS_res = $ss_res_2")
-println("  SS_tot = $ss_tot_2")
-println("  R² = $R2_2_manual")
-
-# Comparaison visuelle θ1 vs θ2
-println("\n=== COMPARAISON VISUELLE ===")
-println("Variance des mesures:")
-println("  Var(θ1_mesure) = $(round(var(θ1_data), digits=4)) rad²")
-println("  Var(θ2_mesure) = $(round(var(θ2_data), digits=4)) rad²")
-
-println("\nVariance des erreurs:")
-println("  Var(erreur_θ1) = $(round(var(θ1_data .- θ1_sim), digits=4)) rad²")
-println("  Var(erreur_θ2) = $(round(var(θ2_data .- θ2_sim), digits=4)) rad²")
-
-println("\nRatio erreur/signal:")
-println("  θ1: $(round(std(θ1_data .- θ1_sim) / std(θ1_data) * 100, digits=2))%")
-println("  θ2: $(round(std(θ2_data .- θ2_sim) / std(θ2_data) * 100, digits=2))%")
-
-# =============================================================================
-# Graphiques
-# =============================================================================
-
-# Graphique de comparaison des angles
-p_angles = plot(t_data, θ1_data, label="θ1 mesuré", lw=2, title="Comparaison simulation vs données")
-plot!(p_angles, t_data, θ1_sim, label="θ1 simulé", ls=:dash, lw=2)
-plot!(p_angles, t_data, θ2_data, label="θ2 mesuré", lw=2)
-plot!(p_angles, t_data, θ2_sim, label="θ2 simulé", ls=:dash, lw=2)
-xlabel!(p_angles, "Temps (s)")
-ylabel!(p_angles, "Angle (rad)")
-savefig(p_angles, "assets/pendule_comparison.png")
-println("\nGraphique sauvegardé: assets/pendule_comparison.png")
-
-# Graphique de l'exposant de Lyapunov (divergence)
-p_lyap = plot(t_lyap, log.(separations), label="ln(δ)", lw=2, title="Divergence des trajectoires")
-plot!(p_lyap, t_lyap, λ .* t_lyap .+ log(1e-8), label="Fit: λt + ln(δ₀)", ls=:dash, lw=2)
-xlabel!(p_lyap, "Temps (s)")
-ylabel!(p_lyap, "ln(séparation)")
-savefig(p_lyap, "assets/lyapunov_divergence.png")
-println("Graphique sauvegardé: assets/lyapunov_divergence.png")
-
-# Graphique de l'énergie
-p_energy = plot(t_data, E_total, label="E totale", lw=2, title="Énergie du système (simulation)")
-plot!(p_energy, t_data, E_kinetic, label="E cinétique", lw=2)
-plot!(p_energy, t_data, E_potential, label="E potentielle", lw=2)
-xlabel!(p_energy, "Temps (s)")
-ylabel!(p_energy, "Énergie (J)")
-# Annotation avec l'écart-type
-annotate!(p_energy, t_data[end]*0.95, E_mean, 
-    text("σ = $(round(E_std, sigdigits=3)) J\n($(round(E_std_relative, sigdigits=2))%)", 8, :right))
-savefig(p_energy, "assets/energie.png")
-println("Graphique sauvegardé: assets/energie.png")
-
-# Graphique de la divergence mesures vs simulation
-p_div = plot(t_data, rad2deg.(div_analysis.errors_θ1), label="Erreur θ1", lw=2, 
-             title="Divergence mesures vs simulation", color=:blue)
-plot!(p_div, t_data, rad2deg.(div_analysis.errors_θ2), label="Erreur θ2", lw=2, color=:orange)
-plot!(p_div, t_data, rad2deg.(div_analysis.error_total), label="Erreur totale", lw=2, color=:red)
-hline!(p_div, [div_analysis.threshold_deg], label="Seuil $(div_analysis.threshold_deg)°", ls=:dash, color=:black)
-if !isnan(div_analysis.t_divergence)
-    vline!(p_div, [div_analysis.t_divergence], label="Divergence", ls=:dot, color=:gray, lw=2)
-end
-xlabel!(p_div, "Temps (s)")
-ylabel!(p_div, "Erreur (°)")
-savefig(p_div, "assets/divergence_mesures_simulation.png")
-println("Graphique sauvegardé: assets/divergence_mesures_simulation.png")
-
-# Graphique log de la divergence (pour voir le taux exponentiel)
-# Éviter les valeurs nulles pour l'échelle log
-error_for_log = max.(div_analysis.error_total, 1e-10)
-p_div_log = plot(t_data, error_for_log, label="Erreur totale", lw=2, 
-                 title="Divergence mesures vs simulation (échelle log)", yscale=:log10)
-xlabel!(p_div_log, "Temps (s)")
-ylabel!(p_div_log, "Erreur (rad)")
-savefig(p_div_log, "assets/divergence_log.png")
-println("Graphique sauvegardé: assets/divergence_log.png")
-
-# Animation
-animate_pendulum(t_data, θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, fps=10, skip=2)
-
-# Image de la frame 1
-save_frame(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, t_data, frame=1)
-
-# =============================================================================
-# Visualisation de l'extrapolation (si disponible)
-# =============================================================================
+save_frame_detailed(θ1_data, θ2_data, θ1_sim, θ2_sim, L1, L2, m1_opt, m2_opt, t_data, frame=1)
 
 if @isdefined(θ1_sim_full) && @isdefined(θ2_sim_full) && @isdefined(t_sim_full)
-    println("\n" * "="^60)
-    println("VISUALISATION DE L'EXTRAPOLATION")
-    println("="^60)
+    println("\nVisualisation extrapolation...")
     
-    # Graphique avec extrapolation
     p_extrap = plot(title="Simulation avec extrapolation", size=(900, 500))
-    
-    # Données réelles
     plot!(p_extrap, t_data, rad2deg.(θ1_data), label="θ1 mesuré", lw=2, color=:blue)
     plot!(p_extrap, t_data, rad2deg.(θ2_data), label="θ2 mesuré", lw=2, color=:orange)
-    
-    # Simulation complète
-    plot!(p_extrap, t_sim_full, rad2deg.(θ1_sim_full), label="θ1 simulé (complet)", 
-          ls=:dash, lw=2, color=:blue, alpha=0.7)
-    plot!(p_extrap, t_sim_full, rad2deg.(θ2_sim_full), label="θ2 simulé (complet)", 
-          ls=:dash, lw=2, color=:orange, alpha=0.7)
-    
-    # Ligne verticale pour séparer données réelles et extrapolation
-    vline!(p_extrap, [t_data[end]], label="Fin des données", 
-           ls=:dot, color=:red, lw=2)
-    
-    # Zone d'extrapolation en gris
-    vspan!(p_extrap, [t_data[end], t_sim_full[end]], 
-           alpha=0.1, color=:gray, label="Zone d'extrapolation")
-    
+    plot!(p_extrap, t_sim_full, rad2deg.(θ1_sim_full), label="θ1 simulé", ls=:dash, lw=2, color=:blue, alpha=0.7)
+    plot!(p_extrap, t_sim_full, rad2deg.(θ2_sim_full), label="θ2 simulé", ls=:dash, lw=2, color=:orange, alpha=0.7)
+    vline!(p_extrap, [t_data[end]], label="Fin données", ls=:dot, color=:red, lw=2)
+    vspan!(p_extrap, [t_data[end], t_sim_full[end]], alpha=0.1, color=:gray, label="Extrapolation")
     xlabel!(p_extrap, "Temps (s)")
     ylabel!(p_extrap, "Angle (°)")
-    
     savefig(p_extrap, "assets/extrapolation.png")
-    println("\nGraphique d'extrapolation sauvegardé: assets/extrapolation.png")
     
-    # Animation de l'extrapolation (simulation seule, sans données mesurées)
-    println("\nCréation de l'animation d'extrapolation (simulation seule)...")
-    animate_extrapolation(t_sim_full, θ1_sim_full, θ2_sim_full, L1, L2, t_data[end], 
-                         fps=20, skip=2)
+    animate_extrapolation(t_sim_full, θ1_sim_full, θ2_sim_full, L1, L2, t_data[end], fps=20, skip=2)
     
-    println("\n⚠ ATTENTION: L'extrapolation au-delà de $(round(t_data[end], digits=2))s")
-    println("   ne correspond plus aux données réelles et montre seulement")
-    println("   la prédiction du modèle chaotique.")
-else
-    println("\n(Pas d'extrapolation disponible - simulation standard)")
+    println("✓ Graphiques extrapolation sauvegardés")
 end
 
 println("\n" * "="^60)
-println("Analyse terminée!")
+println("✓ Analyse terminée!")
 println("="^60)
