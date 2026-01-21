@@ -375,8 +375,41 @@ MAE_θ2 = calculate_MAE(θ2_data, θ2_sim)
 
 println("\nMétriques simulation/mesures:")
 println("  R²: θ1=$(round(R2_θ1, digits=4)), θ2=$(round(R2_θ2, digits=4))")
-println("  RMSE: θ1=$(round(rad2deg(RMSE_θ1), digits=2))°, θ2=$(round(rad2deg(RMSE_θ2), digits=2))°")
-println("  MAE: θ1=$(round(rad2deg(MAE_θ1), digits=2))°, θ2=$(round(rad2deg(MAE_θ2), digits=2))°")
+
+# RMSE en pourcentage
+RMSE_θ1_pct = (RMSE_θ1 / (maximum(θ1_data) - minimum(θ1_data))) * 100
+RMSE_θ2_pct = (RMSE_θ2 / (maximum(θ2_data) - minimum(θ2_data))) * 100
+
+# MAE en pourcentage
+MAE_θ1_pct = (MAE_θ1 / (maximum(θ1_data) - minimum(θ1_data))) * 100
+MAE_θ2_pct = (MAE_θ2 / (maximum(θ2_data) - minimum(θ2_data))) * 100
+
+# Évaluation RMSE
+rmse_avg = (RMSE_θ1_pct + RMSE_θ2_pct) / 2
+rmse_comment = if rmse_avg < 2.0
+    "excellent"
+elseif rmse_avg < 5.0
+    "bon"
+elseif rmse_avg < 10.0
+    "moyen"
+else
+    "mauvais"
+end
+
+# Évaluation MAE
+mae_avg = (MAE_θ1_pct + MAE_θ2_pct) / 2
+mae_comment = if mae_avg < 2.0
+    "excellent"
+elseif mae_avg < 5.0
+    "bon"
+elseif mae_avg < 10.0
+    "moyen"
+else
+    "mauvais"
+end
+
+println("  RMSE: θ1=$(round(RMSE_θ1_pct, digits=2))%, θ2=$(round(RMSE_θ2_pct, digits=2))% → $(rmse_comment)")
+println("  MAE: θ1=$(round(MAE_θ1_pct, digits=2))%, θ2=$(round(MAE_θ2_pct, digits=2))% → $(mae_comment)")
 
 println("\nExposant de Lyapunov:")
 λ, t_lyap, separations = lyapunov_exponent(m_opt[1], m_opt[2], L1, L2, g, -θ1_0, θ2_0, 2.0)
