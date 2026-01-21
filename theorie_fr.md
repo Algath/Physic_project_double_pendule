@@ -382,4 +382,3 @@ $$
 Remarques :
 
 - Les étapes intermédiaires impliquent de regrouper des termes contenant $\sin\delta$ ou $\cos\delta$ et de factoriser des coefficients communs ; l'annexe montre les dérivées clés de sorte que la réarrangement algébrique est direct à vérifier symboliquement (ou avec un CAS).
-- Si souhaité, je peux produire une dérivation symbolique entièrement développée (polynôme explicite en sinus et cosinus) en utilisant un CAS (p.ex. SymPy ou SymEngine) et l'inclure en fichier supplémentaire.
